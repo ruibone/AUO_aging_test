@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[6]:
+# In[45]:
 
 
 import os
@@ -10,20 +10,21 @@ import itertools
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from tqdm.auto import tqdm
 
 from sklearn.ensemble import AdaBoostClassifier
 
 from Dataset_Construction import Balance_Ratio
 from Sampling import label_divide
 from Aging_Score import score1
-'''
-os.chdir('C:/Users/Darui Yen/OneDrive/桌面/data_after_mid') 
-os.getcwd()
-'''
+
+#os.chdir('C:/Users/Darui Yen/OneDrive/桌面/data_after_mid') 
+#os.getcwd()
+
 
 # ### Load multiple dataset
 
-# In[31]:
+# In[46]:
 
 
 def multiple_set(num_set):
@@ -53,12 +54,12 @@ def train_set(data_dict, num_set, label = 'GB'):
 
 # ### Boosting Model
 
-# In[3]:
+# In[68]:
 
 
 def AdaBoostC(train_x, test_x, train_y, test_y, n_estimator = 100, LR = 0.7):
     
-    clf = AdaBoostClassifier(n_estimators = n_estimator, learning_rate = LR, random_state = None)
+    clf = AdaBoostClassifier(n_estimators = n_estimator, learning_rate = LR)
     clf.fit(train_x, train_y)
     predict_y = clf.predict(test_x)
     result = pd.DataFrame({'truth': test_y, 'predict': predict_y})
@@ -68,26 +69,35 @@ def AdaBoostC(train_x, test_x, train_y, test_y, n_estimator = 100, LR = 0.7):
 
 # ### Recall & Precision for Classifier
 
-# In[8]:
+# In[62]:
 
 
 def cf_matrix(predict, train_y):
     
     #confusion matrix
-    cf = np.zeros([2,2])
-    for i in range(len(predict)):
-        if predict['predict'].values[i] == 0:
-            row_index = 1
-        else:
-            row_index = 0
-        if predict['truth'].values[i] == 0:
-            col_index = 1
-        else:
-            col_index = 0
-        cf[row_index][col_index] += 1
-    cf = cf.astype(int)
+#     cf = np.zeros([2,2])
+#     for i in range(len(predict)):
+#         if predict['predict'].values[i] == 0:
+#             row_index = 1
+#         else:
+#             row_index = 0
+#         if predict['truth'].values[i] == 0:
+#             col_index = 1
+#         else:
+#             col_index = 0
+#         cf[row_index][col_index] += 1
+#     cf = cf.astype(int)
     
-    TP, FP, FN, TN = cf[0,0], cf[0,1], cf[1,0], cf[1,1]
+#     TP, FP, FN, TN = cf[0,0], cf[0,1], cf[1,0], cf[1,1]
+
+    mask_FP = predict['predict'] > predict['truth']
+    mask_FN = predict['predict'] < predict['truth']
+    mask_TP = (predict['predict'] == predict['truth']) * (predict['predict'] == 1)
+    mask_TN = (predict['predict'] == predict['truth']) * (predict['predict'] == 0)
+    TP = mask_TP.sum()
+    FP = mask_FP.sum()
+    FN = mask_FN.sum()
+    TN = mask_TN.sum()
     
     #balance ratio, train OK & NG
     train_OK = sum(train_y < 0.5)
@@ -136,7 +146,7 @@ def print_badC(predict, test_x, Bad_Types, threshold = 1):
         Bad_miss.sort()
     print('Types of Bad not found:', Bad_miss)
     
-    bad_table = pd.Series({'Bad_Found': Bad, 'Bad_Missed': Bad_miss})
+    bad_table = pd.Series({'Bad_Found': set(Bad), 'Bad_Missed': set(Bad_miss)})
     bad_table = pd.DataFrame(bad_table).T
     bad_table['Detect Ratio'] = len(Bad) / (len(Bad) + len(Bad_miss))
     
@@ -145,7 +155,7 @@ def print_badC(predict, test_x, Bad_Types, threshold = 1):
 
 # ### Run all dataset
 
-# In[9]:
+# In[50]:
 
 
 def runall_AdaBoostC(num_set, trainset_x, test_x, trainset_y, test_y, record_bad = True):
@@ -153,7 +163,7 @@ def runall_AdaBoostC(num_set, trainset_x, test_x, trainset_y, test_y, record_bad
     table_set = pd.DataFrame()
     bad_set = pd.DataFrame()
 
-    for i in range(num_set):
+    for i in tqdm(range(num_set)):
         print('\n', f'Dataset {i}:')
 
         result = AdaBoostC(trainset_x[f'set{i}'], test_x, trainset_y[f'set{i}'], test_y)
@@ -172,7 +182,7 @@ def runall_AdaBoostC(num_set, trainset_x, test_x, trainset_y, test_y, record_bad
 
 # ### Plot all dataset
 
-# In[10]:
+# In[58]:
 
 
 def bad_plot(bad_set):
@@ -205,7 +215,7 @@ def bad_plot(bad_set):
     plt.show()
     
     
-def line_chart(table_set, title = 'AdaBoost Classifier'):
+def line_chart(table_set, title):
     
     plt.style.use('seaborn-dark-palette')
     
@@ -235,7 +245,7 @@ def line_chart(table_set, title = 'AdaBoost Classifier'):
 # ## Data Processing
 # 
 
-# In[78]:
+# In[53]:
 
 
 ###bad types###
@@ -252,32 +262,43 @@ print('\ntesting data:', test.shape, '\nBalance Ratio:', Balance_Ratio(test))
 #train_x, train_y, test_x, test_y = label_divide(train, test, 'GB')
 
 ###multiple dataset###
-data_dict = multiple_set(num_set = 7)
-trainset_x, trainset_y = train_set(data_dict, num_set = 7, label = 'GB')
+data_dict = multiple_set(num_set = 9)
+trainset_x, trainset_y = train_set(data_dict, num_set = 9, label = 'GB')
 test_x, test_y = label_divide(test, None, 'GB', train_only = True)
 
 
-# In[53]:
+#####for runhist dataset#####
+# bad = pd.read_csv('run_bad_types.csv').iloc[:, 1:]
+# Bad_Types = {bad.cb[i]:i for i in range (len(bad))}
+# print('Total bad types:', len(bad))
+
+run_test = pd.read_csv('test_runhist.csv').iloc[:, 2:]
+run_test_x, run_test_y = label_divide(run_test, None, 'GB', train_only = True)
+print('\n', 'Dimension of run test:', run_test.shape)
+
+
+# In[67]:
 
 
 start = time.time()
 
-table_set, bad_set = runall_AdaBoostC(7, trainset_x, test_x, trainset_y, test_y)
-bad_plot(bad_set)
-line_chart(table_set)
+#table_set, bad_set = runall_AdaBoostC(9, trainset_x, test_x, trainset_y, test_y)
+table_set = runall_AdaBoostC(9, trainset_x, run_test_x, trainset_y, run_test_y, record_bad = False)
+line_chart(table_set, title = 'AdaBoost Classifier')
 
 end = time.time()
 print("\nRun Time：%f seconds" % (end - start))
 
 
-# In[43]:
+# In[64]:
 
 
 table_set
 
 
-# In[44]:
+# In[65]:
 
 
+bad_plot(bad_set)
 bad_set
 '''
