@@ -10,7 +10,7 @@ import pyreadr
 import numpy as np
 import pandas as pd
 
-import smote_variants as sv
+#import smote_variants as sv
 from imblearn import FunctionSampler
 from imblearn.under_sampling import RandomUnderSampler
 
