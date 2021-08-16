@@ -157,28 +157,30 @@ def PR_curve(pr_matrix, best_data, title = 'PR_curve'):
     
 def multiple_curve(row_num, col_num, pr_dict, table_set, target = 'Aging Rate'):
     
-    fig, axs = plt.subplots(row_num, col_num, sharex = False, sharey = False, figsize = (30,15))
-    plt.suptitle(f'{target} & Recall Curve of Dataset 0 - 8', y = 0.94, fontsize = 30)
+    fig, axs = plt.subplots(row_num, col_num, sharex = False, sharey = False, figsize = (row_num*8 + 1, col_num*6))
+    plt.suptitle(f'{target} & Recall Curve of Dataset 0 - {len()}', y = 0.94, fontsize = 30)
     
     for row in range(row_num):
         for col in range(col_num):
-            index = col_num*row + col
-            auc = AUC(pr_dict[f'set{index}']['Recall'].values, pr_dict[f'set{index}'][target].values).round(4)
-            ar = table_set["Aging Rate"][index].round(3)
-            recall = table_set["Recall"][index].round(3)
-            precision = table_set["Precision"][index].round(5)
-
-            axs[row, col].plot(pr_dict[f'set{index}']['Recall'], pr_dict[f'set{index}'][target], 'b-')
-            axs[row, col].plot(pr_dict[f'set{index}']['Recall'], pr_dict[f'set{index}'][target], 'r.', markersize = 10)
-            axs[row, col].plot(table_set['Recall'][index], table_set[target][index], 'go', markersize = 15)
-            axs[row, col].set_xlabel('Recall')
-            axs[row, col].set_ylabel(target)
             
-            if target == 'Aging Rate':
-                axs[row, col].set_title(f'dataset {index},   AUC = {auc},   Aging Rate = {ar},   Recall = {recall},      Precision = {precision}')
-            elif target == 'Precision':
-                axs[row, col].set_title(f'dataset {index},       AUC = {auc},       Aging Rate = {ar},       Recall = {recall}')
+            index = col_num*row + col
+            if index < len(table_set) :
+                auc = AUC(pr_dict[f'set{index}']['Recall'].values, pr_dict[f'set{index}'][target].values).round(5)
+                ar = table_set["Aging Rate"][index].round(3)
+                recall = table_set["Recall"][index].round(3)
+                precision = table_set["Precision"][index].round(5)
 
+                axs[row, col].plot(pr_dict[f'set{index}']['Recall'], pr_dict[f'set{index}'][target], 'b-')
+                axs[row, col].plot(pr_dict[f'set{index}']['Recall'], pr_dict[f'set{index}'][target], 'r.', markersize = 10)
+                axs[row, col].plot(table_set['Recall'][index], table_set[target][index], 'go', markersize = 15)
+                axs[row, col].set_xlabel('Recall')
+                axs[row, col].set_ylabel(target)
+
+                if target == 'Aging Rate':
+                    axs[row, col].set_title(f'dataset {index},   AUC = {auc},   Aging Rate = {ar},   Recall = {recall}, \
+                                            Precision = {precision}')
+                elif target == 'Precision':
+                    axs[row, col].set_title(f'dataset {index},       AUC = {auc},       Aging Rate = {ar},       Recall = {recall}')
 '''
 # ## Data Processing
 

@@ -238,7 +238,7 @@ def line_chart(table_set, title):
     ax1.legend(loc = 'upper left', frameon = False)
     ax2.legend(loc = 'upper right', frameon = False)
     
-    plt.savefig(f'{title}.jpg')
+    #plt.savefig(f'{title}.jpg')
     plt.show()
 
 '''
