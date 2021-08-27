@@ -267,7 +267,7 @@ def objective_creator(train_data, mode, num_valid = 3) :
     return objective
 
 
-def all_optuna(num_set, all_data, mode, TPE_multi, n_iter, num_valid = 3, return_addition = True) :
+def all_optuna(num_set, all_data, mode, TPE_multi, n_iter, filename, creator, num_valid = 3, return_addition = True) :
 
     best_param = {}
     #all_study = {}
@@ -275,7 +275,7 @@ def all_optuna(num_set, all_data, mode, TPE_multi, n_iter, num_valid = 3, return
     for i in tqdm(range(num_set)) :
         
         ##### define objective function and change optimized target dataset in each loop #####
-        objective = objective_creator(train_data = data_dict[f'set{i}'], mode = mode, num_valid = num_valid)
+        objective = creator(train_data = all_data[f'set{i}'], mode = mode, num_valid = num_valid)
         
         ##### optimize one dataset in each loop #####
         print(f'Dataset{i} :')
@@ -296,8 +296,8 @@ def all_optuna(num_set, all_data, mode, TPE_multi, n_iter, num_valid = 3, return
         print(f"Sampler is {study.sampler.__class__.__name__}")
     
     ##### store the best hyperparameters #####
-    multi_mode = 'multivariate' if TPE_multi else 'univariate'
-    with open(f'runhist_array_m2m5_XGBoost{mode}_{multi_mode}-TPE_{n_iter}.data', 'wb') as f:
+    multi_mode = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
+    with open(f'{filename}{mode}_{multi_mode}_{n_iter}.data', 'wb') as f:
         pickle.dump(best_param, f)
     
     if return_addition :
@@ -306,17 +306,19 @@ def all_optuna(num_set, all_data, mode, TPE_multi, n_iter, num_valid = 3, return
         return best_param
     
 
-def optuna_history(best_param, all_score, model = 'XGBoost Classifier') :
+def optuna_history(best_param, all_score, num_row, num_col, model = 'XGBoost Classifier') :
 
-    fig, axs = plt.subplots(3, 3, figsize = (30,15))
+    fig, axs = plt.subplots(num_row, num_col, figsize = (num_row*10, num_col*5))
     plt.suptitle(f'Optimization History of {model}', y = 0.94, fontsize = 25)    
-    for row in range(3):
-        for col in range(3):
-            index = 3*row + col
-            axs[row, col].plot(range(len(all_score[f'set{index}'])), all_score[f'set{index}'], 'r-', linewidth = 1)
-            axs[row, col].set_title(f'Dataset {index}')
-            axs[row, col].set_xlabel('Iterations')
-            axs[row, col].set_ylabel('Values')
+    for row in range(num_row):
+        for col in range(num_col):
+            index = num_col*row + col
+            
+            if index < len(best_param) :
+                axs[row, col].plot(range(len(all_score[f'set{index}'])), all_score[f'set{index}'], 'r-', linewidth = 1)
+                axs[row, col].set_title(f'Dataset {index}')
+                axs[row, col].set_xlabel('Iterations')
+                axs[row, col].set_ylabel('Values')
 
 '''
 # In[ ]:

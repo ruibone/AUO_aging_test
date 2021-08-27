@@ -158,7 +158,7 @@ def PR_curve(pr_matrix, best_data, title = 'PR_curve'):
 def multiple_curve(row_num, col_num, pr_dict, table_set, target = 'Aging Rate'):
     
     fig, axs = plt.subplots(row_num, col_num, sharex = False, sharey = False, figsize = (row_num*8 + 1, col_num*6))
-    plt.suptitle(f'{target} & Recall Curve of Dataset 0 - {len()}', y = 0.94, fontsize = 30)
+    plt.suptitle(f'{target} & Recall Curve of Dataset 0 - {len(table_set)}', y = 0.94, fontsize = 30)
     
     for row in range(row_num):
         for col in range(col_num):
@@ -177,10 +177,9 @@ def multiple_curve(row_num, col_num, pr_dict, table_set, target = 'Aging Rate'):
                 axs[row, col].set_ylabel(target)
 
                 if target == 'Aging Rate':
-                    axs[row, col].set_title(f'dataset {index},   AUC = {auc},   Aging Rate = {ar},   Recall = {recall}, \
-                                            Precision = {precision}')
+                    axs[row, col].set_title(f'dataset {index}, AUC = {auc}, Aging Rate = {ar}, Recall = {recall}, Precision = {precision}')
                 elif target == 'Precision':
-                    axs[row, col].set_title(f'dataset {index},       AUC = {auc},       Aging Rate = {ar},       Recall = {recall}')
+                    axs[row, col].set_title(f'dataset {index}, AUC = {auc}, Aging Rate = {ar}, Recall = {recall}')
 '''
 # ## Data Processing
 
