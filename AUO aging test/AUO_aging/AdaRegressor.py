@@ -61,8 +61,8 @@ def PR_matrix(predict, train_y, prob = 0.5):
     matrix['FN'] = matrix['TP'].values[-1] - matrix['TP']
     matrix['TN'] = matrix['FP'].values[-1] - matrix['FP']
     
-    matrix['Recall'] = matrix['TP'] / (matrix['TP'] + matrix['FN'])
     matrix['Precision'] = matrix['TP'] / (matrix['TP'] + matrix['FP'])
+    matrix['Recall'] = matrix['TP'] / (matrix['TP'] + matrix['FN'])
     matrix['Aging Rate'] = (matrix['TP'] + matrix['FP']) / (matrix['TP'] + matrix['FP'] + matrix['FN'] + matrix['TN'])
     matrix['Efficiency'] = matrix['Recall'] / matrix['Aging Rate']
     matrix['Score'] = score1(matrix['Recall'], matrix['Aging Rate'])
