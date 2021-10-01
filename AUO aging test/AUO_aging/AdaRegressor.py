@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[151]:
+# In[ ]:
 
 
 import os
@@ -10,26 +10,31 @@ import itertools
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import pickle
+from tqdm.auto import tqdm
 
 from sklearn.ensemble import AdaBoostRegressor
+import optuna
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeRegressor 
 
 from Dataset_Construction import Balance_Ratio 
 from Sampling import label_divide
 from AdaClassifier import train_set, multiple_set, print_badC, bad_plot, line_chart
 from Aging_Score import score1
 '''
-os.chdir('C:/Users/Darui Yen/OneDrive/桌面/data_after_mid') 
+os.chdir('C:/Users/user/Desktop/Darui_R08621110')  
 os.getcwd()
 '''
 
 # ### Boosting Model
 
-# In[2]:
+# In[ ]:
 
 
-def AdaBoostR(train_x, test_x, train_y, test_y, n_estimator = 100, LR = 0.7):
+def AdaBoostR(train_x, test_x, train_y, test_y, config) :
     
-    clf = AdaBoostRegressor(n_estimators = n_estimator, learning_rate = LR, random_state = None)
+    clf = AdaBoostRegressor(**config)
     clf.fit(train_x, train_y)
     predict_y = clf.predict(test_x)
     result = pd.DataFrame({'truth': test_y, 'predict': predict_y})
@@ -39,7 +44,7 @@ def AdaBoostR(train_x, test_x, train_y, test_y, n_estimator = 100, LR = 0.7):
 
 # ### Recall & Precision for Regressor
 
-# In[252]:
+# In[ ]:
 
 
 def PR_matrix(predict, train_y, prob = 0.5):
@@ -91,20 +96,31 @@ def best_threshold(pr_matrix, target, threshold = False):
 
 # ### Run all dataset
 
-# In[250]:
+# In[ ]:
 
 
-def runall_AdaBoostR(num_set, trainset_x, test_x, trainset_y, test_y, thres_target = 'Recall', threshold = False, 
+def runall_AdaBoostR(num_set, trainset_x, test_x, trainset_y, test_y, config, thres_target = 'Recall', threshold = False, 
                      record_bad = True):
     
     table_set = pd.DataFrame()
     bad_set = pd.DataFrame()
     pr_dict = {}
+    judge = list(config.keys())[0]
 
     for i in range(num_set):
         print('\n', f'Dataset {i}:')
+        
+        if isinstance(config[judge], dict) :
+            best_config = config[f'set{i}']
+        else :
+            best_config = config
+            
+        # seperate the decision tree hyperparameter and adaboost hyperparameter
+        tree_param = {'base_estimator': DecisionTreeRegressor(max_depth = best_config['max_depth'])}
+        boost_param = dict((key, best_config[key]) for key in ['learning_rate', 'n_estimators'] if key in best_config)
+        boost_param.update(tree_param)
 
-        predict = AdaBoostR(trainset_x[f'set{i}'], test_x, trainset_y[f'set{i}'], test_y)
+        predict = AdaBoostR(trainset_x[f'set{i}'], test_x, trainset_y[f'set{i}'], test_y, boost_param)
         pr_matrix = PR_matrix(predict, trainset_y[f'set{i}'])
         pr_dict[f'set{i}'] = pr_matrix
         
@@ -123,19 +139,21 @@ def runall_AdaBoostR(num_set, trainset_x, test_x, trainset_y, test_y, thres_targ
 
 # ### Plot all dataset
 
-# In[377]:
+# In[ ]:
 
 
 def AUC(x, y):
     
-    area=0
-    left=x[0]*y[0]
-    right=(1-x[len(x)-1])*y[len(x)-1]
+    area = 0
+    left = x[0]*y[0]
+    right = (1 - x[len(x)-1])*y[len(x)-1]
     
-    for i in range(1,len(x)):
-        wide=x[i]-x[i-1]
-        area=area+wide*((y[i-1]+y[i])/2)
-    area=left+area+right  
+    for i in range(1, len(x)):
+        wide = x[i] - x[i-1]
+        height = (y[i-1] + y[i])/2
+        area = area + wide*height
+        
+    area = left + area + right
     
     return area
 
@@ -180,65 +198,126 @@ def multiple_curve(row_num, col_num, pr_dict, table_set, target = 'Aging Rate'):
                     axs[row, col].set_title(f'dataset {index}, AUC = {auc}, Aging Rate = {ar}, Recall = {recall}, Precision = {precision}')
                 elif target == 'Precision':
                     axs[row, col].set_title(f'dataset {index}, AUC = {auc}, Aging Rate = {ar}, Recall = {recall}')
+
 '''
 # ## Data Processing
 
-# In[5]:
+# In[ ]:
 
 
 ###bad types###
-bad = pd.read_csv('original_data/Bad_Types.csv').iloc[:, 1:]
+bad = pd.read_csv('event/Bad_Types.csv').iloc[:, 1:]
 Bad_Types = {bad.cb[i]:i for i in range (len(bad))}
 print('Total bad types:', len(bad))
 
 ###single dataset###
-test = pd.read_csv('original_data/TestingSet_0.csv').iloc[:, 2:]
-train = pd.read_csv('original_data/TrainingSet_new.csv').iloc[:, 2:]
+test = pd.read_csv('event/TestingSet_0.csv').iloc[:, 2:]
+train = pd.read_csv('event/TrainingSet_new.csv').iloc[:, 2:]
 print('\ntraining data:', train.shape, '\nBalance Ratio:', Balance_Ratio(train))
-print('\ntesting data:', test.shape, '\nBalance Ratio:', Balance_Ratio(test))
+print('\ntesting data:', test.shape, '\nBalance Ratio:', Balance_Ratio(test), '\n')
 
 train_x, train_y, test_x, test_y = label_divide(train, test, 'GB')
 
 ###multiple dataset###
-data_dict = multiple_set(num_set = 9)
-trainset_x, trainset_y = train_set(data_dict, num_set = 9, label = 'GB')
+data_dict = multiple_set(num_set = 10)
+trainset_x, trainset_y = train_set(data_dict, num_set = 10, label = 'GB')
 test_x, test_y = label_divide(test, None, 'GB', train_only = True)
 
 
-# In[254]:
+#####for runhist dataset#####
+# bad = pd.read_csv('run_bad_types.csv').iloc[:, 1:]
+# Bad_Types = {bad.cb[i]:i for i in range (len(bad))}
+# print('Total bad types:', len(bad))
+
+run_test = pd.read_csv('test_runhist.csv').iloc[:, 2:]
+run_test_x, run_test_y = label_divide(run_test, None, 'GB', train_only = True)
+print('\n', 'Dimension of run test:', run_test.shape)
 
 
-start = time.time()
+# ### Regressor
 
-pr_dict, table_set, bad_set = runall_AdaBoostR(9, trainset_x, test_x, trainset_y, test_y, 
-                                               thres_target = 'Recall', threshold = 0.8)
-
-bad_plot(bad_set)
-
-end = time.time()
-print("\nRun Time：%f seconds" % (end - start))
+# In[ ]:
 
 
-# In[255]:
-
-
+# pr_dict, table_set, bad_set = runall_AdaBoostR(9, trainset_x, test_x, trainset_y, test_y, event_reg_param,
+#                                                thres_target = 'Recall', threshold = 0.7)
+pr_dict, table_set = runall_AdaBoostR(10, trainset_x, run_test_x, trainset_y, run_test_y, best_paramR,
+                                      thres_target = 'Recall', threshold = 0.8, record_bad = False)
 line_chart(table_set, title = 'AdaBoost Regressor')
+#bad_plot(bad_set)
 
 
-# In[336]:
+# In[ ]:
 
 
+multiple_curve(4, 3, pr_dict, table_set, target = 'Aging Rate')
+multiple_curve(4, 3, pr_dict, table_set, target = 'Precision')
 table_set
 
 
-# In[337]:
+# ## Opitmization
+
+# ### Optuna
+
+# In[ ]:
 
 
-bad_set
+def objective_creator(train_data, mode, num_valid = 3) :
+    
+    def objective(trial) :
+
+        tree_param = {
+            'max_depth': trial.suggest_int('max_depth', 1, 3)
+        }
+        
+        param = {
+            'base_estimator': DecisionTreeRegressor(**tree_param),
+            'n_estimators': trial.suggest_int('n_estimators', 100, 300, step = 50),
+            'learning_rate': trial.suggest_float('learning_rate', 0.025, 0.825, step = 0.05),
+        }
+        
+        result_list = []
+        for i in range(num_valid):
+
+            train_x, train_y = label_divide(train_data, None, 'GB', train_only = True)
+            train_x, valid_x, train_y, valid_y = train_test_split(train_x, train_y, test_size = 0.25)
+
+            if mode == 'R':
+                result = AdaBoostR(train_x, valid_x, train_y, valid_y, param)
+                pr_matrix = PR_matrix(result, valid_y)
+
+                #best_data, _ = best_threshold(pr_matrix, target = 'Recall', threshold = 0.8)
+                #aging = best_data['Aging Rate']
+                #result_list.append((-1)*aging)
+
+                auc = AUC(pr_matrix['Recall'], pr_matrix['Aging Rate'])
+                result_list.append((-1)*auc)
+
+        return np.mean(result_list)
+    
+    return objective
 
 
-# In[378]:
+# In[ ]:
 
 
-multiple_curve(3, 3, pr_dict, table_set)
+best_paramR, all_scoreR = all_optuna(num_set = 10, 
+                                     all_data = data_dict, 
+                                     mode = 'R', 
+                                     TPE_multi = True, 
+                                     n_iter = 25,
+                                     filename = 'runhist_array_m2m5_4selection_AdaBoost',
+                                     creator = objective_creator
+                                    )
+
+
+# In[ ]:
+
+
+##### optimization history plot #####
+optuna_history(best_paramR, all_scoreR, model = 'AdaBoost Regressor')
+            
+##### best hyperparameter table #####
+param_table = pd.DataFrame(best_paramR).T
+param_table
 '''

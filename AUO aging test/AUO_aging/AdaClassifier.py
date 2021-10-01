@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[45]:
+# In[ ]:
 
 
 import os
@@ -11,20 +11,24 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
+import pickle
 
-from sklearn.ensemble import AdaBoostClassifier
+from sklearn.ensemble import AdaBoostClassifier 
+from sklearn.tree import DecisionTreeClassifier
+import optuna
+from sklearn.model_selection import train_test_split
 
 from Dataset_Construction import Balance_Ratio
 from Sampling import label_divide
 from Aging_Score import score1
-
-#os.chdir('C:/Users/Darui Yen/OneDrive/桌面/data_after_mid') 
-#os.getcwd()
-
+'''
+os.chdir('C:/Users/user/Desktop/Darui_R08621110')  
+os.getcwd()
+'''
 
 # ### Load multiple dataset
 
-# In[46]:
+# In[ ]:
 
 
 def multiple_set(num_set):
@@ -54,12 +58,12 @@ def train_set(data_dict, num_set, label = 'GB'):
 
 # ### Boosting Model
 
-# In[68]:
+# In[ ]:
 
 
-def AdaBoostC(train_x, test_x, train_y, test_y, n_estimator = 100, LR = 0.7):
+def AdaBoostC(train_x, test_x, train_y, test_y, config):
     
-    clf = AdaBoostClassifier(n_estimators = n_estimator, learning_rate = LR)
+    clf = AdaBoostClassifier(**config)
     clf.fit(train_x, train_y)
     predict_y = clf.predict(test_x)
     result = pd.DataFrame({'truth': test_y, 'predict': predict_y})
@@ -69,27 +73,12 @@ def AdaBoostC(train_x, test_x, train_y, test_y, n_estimator = 100, LR = 0.7):
 
 # ### Recall & Precision for Classifier
 
-# In[62]:
+# In[ ]:
 
 
 def cf_matrix(predict, train_y):
     
-    #confusion matrix
-#     cf = np.zeros([2,2])
-#     for i in range(len(predict)):
-#         if predict['predict'].values[i] == 0:
-#             row_index = 1
-#         else:
-#             row_index = 0
-#         if predict['truth'].values[i] == 0:
-#             col_index = 1
-#         else:
-#             col_index = 0
-#         cf[row_index][col_index] += 1
-#     cf = cf.astype(int)
-    
-#     TP, FP, FN, TN = cf[0,0], cf[0,1], cf[1,0], cf[1,1]
-
+    # confusion matrix
     mask_FP = predict['predict'] > predict['truth']
     mask_FN = predict['predict'] < predict['truth']
     mask_TP = (predict['predict'] == predict['truth']) * (predict['predict'] == 1)
@@ -123,7 +112,6 @@ def cf_matrix(predict, train_y):
     return  table
 
 
-
 def print_badC(predict, test_x, Bad_Types, threshold = 1):
     
     Bad = []
@@ -155,18 +143,29 @@ def print_badC(predict, test_x, Bad_Types, threshold = 1):
 
 # ### Run all dataset
 
-# In[50]:
+# In[ ]:
 
 
-def runall_AdaBoostC(num_set, trainset_x, test_x, trainset_y, test_y, record_bad = True):
+def runall_AdaBoostC(num_set, trainset_x, test_x, trainset_y, test_y, config, record_bad = True):
     
     table_set = pd.DataFrame()
     bad_set = pd.DataFrame()
+    judge = list(config.keys())[0]
 
     for i in tqdm(range(num_set)):
         print('\n', f'Dataset {i}:')
+        
+        if isinstance(config[judge], dict) :
+            best_config = config[f'set{i}']
+        else :
+            best_config = config
+            
+        # seperate the decision tree hyperparameter and adaboost hyperparameter
+        tree_param = {'base_estimator': DecisionTreeClassifier(max_depth = best_config['max_depth'])}
+        boost_param = dict((key, best_config[key]) for key in ['learning_rate', 'n_estimators'] if key in best_config)
+        boost_param.update(tree_param)
 
-        result = AdaBoostC(trainset_x[f'set{i}'], test_x, trainset_y[f'set{i}'], test_y)
+        result = AdaBoostC(trainset_x[f'set{i}'], test_x, trainset_y[f'set{i}'], test_y, boost_param)
         table = cf_matrix(result, trainset_y[f'set{i}'])
         table_set = pd.concat([table_set, table]).rename(index = {0: f'dataset {i}'})
         
@@ -182,7 +181,7 @@ def runall_AdaBoostC(num_set, trainset_x, test_x, trainset_y, test_y, record_bad
 
 # ### Plot all dataset
 
-# In[58]:
+# In[ ]:
 
 
 def bad_plot(bad_set):
@@ -231,8 +230,8 @@ def line_chart(table_set, title):
     ax1.plot(x, table_set['Recall'], 'r.', markersize = 15)
     ax2.plot(x, table_set['Precision'], 'g--', linewidth = 1, label = 'Precision')
     ax2.plot(x, table_set['Precision'], 'g.', markersize = 15)
-    ax1.set_xlabel('\nDataSet', fontsize = 12)
-    ax1.set_ylabel('Recall & Aging rate', color = 'b')
+    ax1.set_xlabel('\nDataset', fontsize = 12)
+    ax1.set_ylabel('Recall & Aging Rate', color = 'b')
     ax2.set_ylabel('Precision', color = 'g')
     
     ax1.legend(loc = 'upper left', frameon = False)
@@ -245,25 +244,25 @@ def line_chart(table_set, title):
 # ## Data Processing
 # 
 
-# In[53]:
+# In[ ]:
 
 
 ###bad types###
-bad = pd.read_csv('original_data/Bad_Types.csv').iloc[:, 1:]
+bad = pd.read_csv('event/Bad_Types.csv').iloc[:, 1:]
 Bad_Types = {bad.cb[i]:i for i in range (len(bad))}
 print('Total bad types:', len(bad))
 
 ###single dataset###
-test = pd.read_csv('original_data/TestingSet_0.csv').iloc[:, 2:]
-#train = pd.read_csv('data_from_newpy/Train_sample.csv').iloc[:, 1:]
-#print('\ntraining data:', train.shape, '\nBalance Ratio:', Balance_Ratio(train))
-print('\ntesting data:', test.shape, '\nBalance Ratio:', Balance_Ratio(test))
+test = pd.read_csv('event/TestingSet_0.csv').iloc[:, 2:]
+train = pd.read_csv('event/TrainingSet_new.csv').iloc[:, 2:]
+print('\ntraining data:', train.shape, '\nBalance Ratio:', Balance_Ratio(train))
+print('\ntesting data:', test.shape, '\nBalance Ratio:', Balance_Ratio(test), '\n')
 
-#train_x, train_y, test_x, test_y = label_divide(train, test, 'GB')
+train_x, train_y, test_x, test_y = label_divide(train, test, 'GB')
 
 ###multiple dataset###
-data_dict = multiple_set(num_set = 9)
-trainset_x, trainset_y = train_set(data_dict, num_set = 9, label = 'GB')
+data_dict = multiple_set(num_set = 10)
+trainset_x, trainset_y = train_set(data_dict, num_set = 10, label = 'GB')
 test_x, test_y = label_divide(test, None, 'GB', train_only = True)
 
 
@@ -277,28 +276,86 @@ run_test_x, run_test_y = label_divide(run_test, None, 'GB', train_only = True)
 print('\n', 'Dimension of run test:', run_test.shape)
 
 
-# In[67]:
+# ### Classifier
 
+# In[ ]:
 
-start = time.time()
 
 #table_set, bad_set = runall_AdaBoostC(9, trainset_x, test_x, trainset_y, test_y)
-table_set = runall_AdaBoostC(9, trainset_x, run_test_x, trainset_y, run_test_y, record_bad = False)
+table_set = runall_AdaBoostC(10, trainset_x, run_test_x, trainset_y, run_test_y, best_paramC, record_bad = False)
 line_chart(table_set, title = 'AdaBoost Classifier')
-
-end = time.time()
-print("\nRun Time：%f seconds" % (end - start))
+#bad_plot(bad_set)
 
 
-# In[64]:
+# In[ ]:
 
 
 table_set
 
 
-# In[65]:
+# ## Optimization
+
+# ### Optuna
+
+# In[ ]:
 
 
-bad_plot(bad_set)
-bad_set
+def objective_creator(train_data, mode, num_valid = 3) :
+    
+    def objective(trial) :
+
+        tree_param = {
+            'max_depth': trial.suggest_int('max_depth', 1, 3)
+        }
+        
+        param = {
+            'base_estimator': DecisionTreeClassifier(**tree_param),
+            'n_estimators': trial.suggest_int('n_estimators', 100, 300, step = 50),
+            'learning_rate': trial.suggest_float('learning_rate', 0.025, 0.825, step = 0.05),
+        }
+
+
+        result_list = []
+        for i in range(num_valid):
+
+            train_x, train_y = label_divide(train_data, None, 'GB', train_only = True)
+            train_x, valid_x, train_y, valid_y = train_test_split(train_x, train_y, test_size = 0.25)
+
+            if mode == 'C':
+                result = AdaBoostC(train_x, valid_x, train_y, valid_y, param)
+                table = cf_matrix(result, valid_y)
+                recall = table['Recall']
+                aging = table['Aging Rate']
+                effi = table['Efficiency']
+
+                #result_list.append(effi)
+                result_list.append(recall - 0.1*aging)
+
+        return np.mean(result_list)
+    
+    return objective
+
+
+# In[ ]:
+
+
+best_paramC, all_scoreC = all_optuna(num_set = 10, 
+                                     all_data = data_dict, 
+                                     mode = 'C', 
+                                     TPE_multi = True, 
+                                     n_iter = 25, 
+                                     filename = 'runhist_array_m2m5_4selection_AdaBoost',
+                                     creator = objective_creator
+                                    )
+
+
+# In[ ]:
+
+
+##### optimization history plot #####
+optuna_history(best_paramC, all_scoreC, model = 'AdaBoost Classifier')
+            
+##### best hyperparameter table #####
+param_table = pd.DataFrame(best_paramC).T
+param_table
 '''
