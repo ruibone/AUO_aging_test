@@ -267,9 +267,9 @@ def AdaBoostC(train_x, test_x, train_y, test_y, config):
 
 def AdaBoostR(train_x, test_x, train_y, test_y, config) :
     
-    clf = AdaBoostRegressor(**config)
-    clf.fit(train_x, train_y)
-    predict_y = clf.predict(test_x)
+    reg = AdaBoostRegressor(**config)
+    reg.fit(train_x, train_y)
+    predict_y = reg.predict(test_x)
     result = pd.DataFrame({'truth': test_y, 'predict': predict_y})
     
     return result
