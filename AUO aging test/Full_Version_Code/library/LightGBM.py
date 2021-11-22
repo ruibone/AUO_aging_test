@@ -122,8 +122,16 @@ def LightGBM_creator(train_data, mode, num_valid = 3, label = 'GB') :
         result_list = []
         for i in range(num_valid):
 
-            train_x, train_y = label_divide(train_data, None, label, train_only = True)
-            train_x, valid_x, train_y, valid_y = train_test_split(train_x, train_y, test_size = 0.25)
+            train_good = train_data[train_data.GB == 0]
+            train_bad = train_data[train_data.GB == 1]
+            train_good_x, train_good_y = label_divide(train_good, None, label, train_only = True)
+            train_bad_x, train_bad_y = label_divide(train_bad, None, label, train_only = True)
+            train_g_x, valid_g_x, train_g_y, valid_g_y = train_test_split(train_good_x, train_good_y, test_size = 0.25)
+            train_b_x, valid_b_x, train_b_y, valid_b_y = train_test_split(train_bad_x, train_bad_y, test_size = 0.25)
+            train_x = pd.concat([train_g_x, train_b_x], axis = 0)
+            train_y = pd.concat([train_g_y, train_b_y], axis = 0)
+            valid_x = pd.concat([valid_g_x, valid_b_x], axis = 0)
+            valid_y = pd.concat([valid_g_y, valid_b_y], axis = 0)
 
             if mode == 'C':
                 result = LightGBMC(train_x, valid_x, train_y, valid_y, param)

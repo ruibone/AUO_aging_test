@@ -15,65 +15,52 @@ import category_encoders as ce
 from apyori import apriori
 from mlxtend.preprocessing import TransactionEncoder
 from sklearn.feature_selection import mutual_info_classif
-'''
+
 os.chdir('C:/Users/user/Desktop/Darui_R08621110')
 os.getcwd()
-'''
+
 
 # ## 
 
 # ### raw data preprocessing
 
-# In[12]:
+# In[2]:
 
 
-##### correct the date format and combine the whole year module file ##### 
-def combine_module(module_m8m1, module_m2m7) :
+##### adjust the date format into year, month & day and combine the whole year module file ##### 
+def combine_module(module_m8m3, module_m2m7):
     
-    old = module_m8m1.copy()
+    old = module_m8m3.copy()
     new = module_m2m7.copy()
-    date = old['shift_date'].str.split('/', expand = True)
-    date.columns = ['month', 'day', 'year']
-    date['new_shift'] = date['year'] + '-' + date['month'] + '-' + date['day']
-    del old['shift_date']
-    old['shift_date'] = date['new_shift']
-    
-    all_module = pd.concat([old, new], axis = 0).reset_index(drop = True)
+    datetype_1 = pd.to_datetime(old.shift_date)
+    datetype_2 = pd.to_datetime(new.shift_date)
+    del old['shift_date'], new['shift_date']
+    old['shift_date'] = datetype_1
+    new['shift_date'] = datetype_2
+    old.sort_values(by = 'shift_date')
+    new.sort_values(by = 'shift_date')
+    old_m8m1 = old[old.shift_date.dt.month.isin([8, 9, 10, 11, 12, 1])]
+    all_module = pd.concat([old_m8m1, new], axis = 0).reset_index(drop = True)
     
     return all_module
-
-
-##### order the instances in module by date and remove the duplicated id by only keeping the latest instance #####
-def order_module(module, drop_time = True) :
-    
-    module_drop = module[['id', 'GB', 'shift_date']]
-    module_dupli = module_drop.groupby(['id']).max().reset_index()
-    date = module_dupli['shift_date'].str.split("-", expand = True)
-    date = date.astype(int)
-    module_time = pd.concat([module_dupli, date], axis = 1)
-    module_time = module_time.rename(columns = {0: 'year', 1: 'month', 2: 'day'})
-    module_time = module_time.sort_values(by = ['year', 'month', 'day']).reset_index(drop = True)
-    
-    if drop_time :
-        module_time = module_time.drop(columns = ['month', 'year', 'day'])
-        
-    return module_time
 
 
 ##### select the instances in specific month in module #####
 def module_month(module, month) :
     
-    module_time = module.copy()
-    first_index = module_time[module_time['month'] == month].index.min()
-    last_index = module_time[module_time['month'] == month].index.max()
-    module_target = module_time.loc[first_index: last_index].drop(columns = ['shift_date', 'year', 'month', 'day'])
-    module_target = module_target.reset_index(drop = True)
-    print(f'Dimension of unique id in module in month {month}:', len(module_target))
+    module_time = module[['id', 'shift_date', 'GB']]
+    module_time = module_time.sort_values(by = 'shift_date')
+    if isinstance(month, list):
+        module_target = module_time[module_time.shift_date.dt.month in month]
+    elif isinstance(month, int):
+        module_target = module_time[module_time.shift_date.dt.month == month]
+    module_uni = module_target.groupby('id').max().reset_index()
+    print(f'Dimension of unique id in module in month {month}:', module_uni.shape)
     
-    return module_target
+    return module_uni
 
 
-# In[128]:
+# In[22]:
 
 
 ##### combine runhist array & id mapping and combine equipment with carrier index and one-hot encoding #####
@@ -103,27 +90,27 @@ def runhist_array_f(runhist_array, id_mapping, no_dummy = False) :
     # one-hot encoding
     if no_dummy == False :
         array_dummy = pd.get_dummies(array_nodummy, columns = ['label_eqp', 'op_id_info']) 
-        #eqp_id_info(124), op_id_info(39)
 
     elif no_dummy =='eqp' :
         array_dummy = pd.get_dummies(array_nodummy, columns = ['op_id_info'])
 
     elif no_dummy == 'op' :
         array_dummy = pd.get_dummies(array_nodummy, columns = ['label_eqp'])
-            
-    array_uni = array_dummy.groupby('id').max().reset_index()
-    print('\nDimension of unique id in runhist_array:', array_uni.shape)
+
+    print('# id in runhist_array:', array_dummy.shape)
     
-    return array_uni
+    return array_dummy
 
 
 ##### establish runhist array by each month and view the info #####
-def array_bymonth(runhist_array, module, month_list):
+def array_bymonth(runhist_all, mapping_all, module_all, month_list):
     
-    module_dict = {}
-    array_dict = {}
+    runhist_dict = {}
+    module_len = []
+    runhist_len = []
     bad_counts = []
     good_counts = []
+    feature_count = []
     balance_ratio = []
     eqp_counts = []
     op_counts = []
@@ -131,68 +118,79 @@ def array_bymonth(runhist_array, module, month_list):
     diff_counts = []
     cumudiff_counts = []
 
-    module_order = order_module(module, drop_time = False)
-    for index, i in enumerate(target_month):
+    for index, i in enumerate(month_list):
         
-        module_dict[f'm{i}'] = module_month(module_order, month = i)
-        array_dict[f'm{i}'] = runhist_array.merge(module_dict[f'm{i}'], on = 'id', how = 'inner')
-        temp_1 = drop_variation(array_dict[f'm{i}'])
-        eqp_list, op_list, rework_list = count_category(temp_1, print_info = False)
+        print(f'\nMonth {i}:')
+        runhist_target = runhist_array_f(runhist_all[f'm{i}'], mapping_all[f'm{i}'])
+        runhist_full = runhist_target.merge(module_all[f'm{i}'], on = 'id', how = 'inner')
+        runhist_full = runhist_full.drop(columns = 'shift_date')
+        runhist_uni = runhist_full.groupby('id').max().reset_index()
+        runhist_dict[f'm{i}'], _ = drop_variation(runhist_uni, drop_allone = False)
+        eqp_list, op_list, rework_list = count_category(runhist_dict[f'm{i}'], print_info = False)
+        print('Dimension of module:', module_all[f'm{i}'].shape)
+        print('Dimension of runhist array:', runhist_dict[f'm{i}'].shape)
         
         if index > 0:
-            temp_2 = drop_variation(array_dict[f'm{month_list[index-1]}'])
-            temp_3 = drop_variation(array_dict[f'm{month_list[0]}'])
-            diffs = count_difference(temp_1, temp_2)
+            diffs = count_difference(runhist_dict[f'm{i}'], runhist_dict[f'm{month_list[index-1]}'])
             diff_counts.append(len(diffs))
-            cumudiffs = count_difference(temp_1, temp_3)
+            cumudiffs = count_difference(runhist_dict[f'm{i}'], runhist_dict[f'm{month_list[0]}'])
             cumudiff_counts.append(len(cumudiffs))
         else:
             diff_counts.append(0)
             cumudiff_counts.append(0)
         
+        module_len.append(len(module_all[f'm{i}']))
+        runhist_len.append(len(runhist_dict[f'm{i}']))
+        feature_count.append(len(eqp_list) + len(op_list) + len(rework_list))
         eqp_counts.append(len(eqp_list))
         op_counts.append(len(op_list))
         rework_counts.append(len(rework_list))
-        bad_counts.append(sum(array_dict[f'm{i}'].GB == 1))
-        good_counts.append(sum(array_dict[f'm{i}'].GB == 0))
-        balance_ratio.append(Balance_Ratio(array_dict[f'm{i}']))
+        bad_counts.append(sum(runhist_dict[f'm{i}'].GB == 1))
+        good_counts.append(sum(runhist_dict[f'm{i}'].GB == 0))
+        balance_ratio.append(Balance_Ratio(runhist_dict[f'm{i}']))
 
-    info = pd.DataFrame({'eqp': eqp_counts, 'op': op_counts, 'rework': rework_counts, 'diff': diff_counts,
-                        'cumu diff': cumudiff_counts, 'bad': bad_counts, 'good': good_counts, 'br': balance_ratio})
+    info = pd.DataFrame({'module length': module_len, 'runhist length': runhist_len, 'features': feature_count,
+                         'eqp': eqp_counts, 'op': op_counts, 'rework': rework_counts, 'diff': diff_counts,
+                         'cumu diff': cumudiff_counts, 'bad': bad_counts, 'good': good_counts, 'br': balance_ratio})
     info.index = month_list
-    print(info.T)
+    print('\n', info.T)
 
-    return module_dict, array_dict
+    return runhist_dict
 
 
 # ### feature selection
 
-# In[14]:
+# In[5]:
 
 
 #### count the number of different columns in two months #####
 def count_difference(array_1, array_2):
     
-    cols_1 = list(array_1.columns)
-    cols_2 = list(array_2.columns)
+    cols_1 = array_1.columns.to_list()
+    cols_2 = array_2.columns.to_list()
     diffs = list(set(cols_1) - set(cols_2)) + list(set(cols_2) - set(cols_1))
+    
     return diffs
 
 
 ##### count the numbers of equipment, operation(-), rework(+) in the features #####
 def count_category(runhist_array, print_info = True) :
 
-    array_cols = runhist_array.columns[1:-1]
+    array_cols = runhist_array.columns.to_list()
+    for x in ['id', 'GB']:
+        if x in array_cols:
+            array_cols.remove(x)
+            
     eqp_list = []
     op_list = []
     rework_list = []
-    for i, name in enumerate(array_cols) :
+    for i, name in enumerate(array_cols):
         split = name.split('_')
-        if split[1] == 'eqp' :
+        if split[1] == 'eqp':
             eqp_list.append(name)
-        elif '-' in name :
+        elif '-' in name:
             op_list.append(name)
-        elif '+' in name :
+        elif '+' in name:
             rework_list.append(name)
     
     if print_info:
@@ -203,79 +201,130 @@ def count_category(runhist_array, print_info = True) :
     return eqp_list, op_list, rework_list
 
 
-# In[15]:
+# In[84]:
 
 
 ########## for training data ##########
 ##### by category (drop op with not much difference between good & bad instances) #####
-def drop_category(runhist_array, tolerate_ratio = 10):
+def drop_category(runhist_array, tolerate_ratio):
     
     array_train = runhist_array.copy()
     _, op_features, _ = count_category(array_train, print_info = False)
 
     br_ratio = sum(array_train.GB == 0) / sum(array_train.GB == 1)
-    tolerate = tolerate_ratio
     for i in op_features:
         bad_count = sum((array_train[i] == 1)&(array_train.GB == 1))
         good_count = sum((array_train[i] == 1)&(array_train.GB == 0))
         ratio = (bad_count*br_ratio) / good_count
-        if any([ratio >= tolerate, ratio <= 1/tolerate]):
+        if any([ratio >= tolerate_ratio, ratio <= 1/tolerate_ratio]):
             op_features.remove(i)
 
     array_train = array_train.drop(columns = op_features)
-    print(f'Drop {len(op_features)} operation features.\n')
+    print(f'Drop {len(op_features)} operation features.')
     
-    return array_train
+    return array_train, op_features
 
 
 ##### by variation (drop eqp & rework without variation in the whole instances) #####
-def drop_variation(runhist_array):
+def drop_variation(runhist_array, drop_allone):
     
     array_train = runhist_array.copy()
-    features = array_train.columns[1:-1]
+    features = array_train.columns.to_list()
+    for x in ['id', 'GB']:
+        if x in features:
+            features.remove(x)
     sumup = array_train[features].astype(int).apply(sum, axis = 0)
+    
     no_variation = []
     for i in range(len(sumup)):
-        if any([sumup[i] == 0, sumup[i] == len(array_train)]):
+        condition = any([sumup[i] == 0, sumup[i] == len(array_train)]) if drop_allone else (sumup[i] == 0)
+        if condition:
             no_variation.append(features[i])
-            array_train = array_train.drop(columns = features[i])
-            # print(f'Drop \"{features[i]}\"')
-    print(f'Drop {len(no_variation)} feature(s) with no variation.\n')
+    array_train = array_train.drop(columns = no_variation)
+    print(f'Drop {len(no_variation)} feature(s) with no variation.')
     
-    return array_train
+    return array_train, no_variation
 
 
 ##### by bad count (drop eqp & rework with no bad instance involved) #####
 def drop_nobad(runhist_array):
     
     array_train = runhist_array.copy()
-    features = array_train.columns[1:-1]
+    features = array_train.columns.to_list()
+    for x in ['id', 'GB']:
+        if x in features:
+            features.remove(x)
     no_label = []
     for i in features:
         if sum(array_train[i]*array_train.GB) == 0:
             no_label.append(i)
-            array_train = array_train.drop(columns = i)
-            # print(f'Drop \"{i}\"')
-    print(f'Drop {len(no_label)} feature(s) with no bad count.\n')
+    array_train = array_train.drop(columns = no_label)
+    print(f'Drop {len(no_label)} feature(s) with no bad count.')
     
-    return array_train
+    return array_train, no_label
 
 
 ##### by mutual information #####
-def drop_mutual_info(runhist_array, tolerate = 0):
+def drop_mutual_info(runhist_array, tolerate):
     
     array_train = runhist_array.copy()
-    features = array_train.columns[1:-1]
-    mutual = mutual_info_classif(array_train.iloc[:, 1:-1], array_train.GB)
+    features = array_train.columns.to_list()
+    for x in ['id', 'GB']:
+        if x in features:
+            features.remove(x)
+    mutual = mutual_info_classif(array_train[features], array_train.GB)
     low_mutual = []
     for i in range(len(features)):
         if mutual[i] <= tolerate:
             low_mutual.append(features[i])
-            # print(f'Drop \"{features[i]}\"')
-            array_train = array_train.drop(columns = features[i])
-    print(f'Drop {len(low_mutual)} feature(s) with extremely low mutual information.\n')
+    array_train = array_train.drop(columns = low_mutual)
+    print(f'Drop {len(low_mutual)} feature(s) with extremely low mutual information.')
     
-    return array_train
+    return array_train, low_mutual
+
+
+##### combine all above #####
+def drop_4criteria(array_dict, month_list):
+    
+    category_count = []
+    variation_count = []
+    nobad_count = []
+    mutual_count = []
+    finish_dict = {}
+    diff_count = []
+    cumudiff_count = []
+    dim_count = []
+    for index, i in enumerate(month_list):
+        
+        print(f'\nMonth {i}:')
+        temp, variation = drop_variation(array_dict[f'm{i}'], drop_allone = True)
+        temp, category = drop_category(temp, tolerate_ratio = 10)
+        temp, nobad = drop_nobad(temp)
+        temp, mutual = drop_mutual_info(temp, tolerate = 0)
+        finish_dict[f'm{i}'] = temp
+        print('Dimension after feature selection:', finish_dict[f'm{i}'].shape)
+        
+        category_count.append(len(category))
+        variation_count.append(len(variation))
+        nobad_count.append(len(nobad))
+        mutual_count.append(len(mutual))
+        dim_count.append(finish_dict[f'm{i}'].shape[1])
+        if index > 0:
+            diffs = count_difference(finish_dict[f'm{i}'], finish_dict[f'm{month_list[index-1]}'])
+            diff_count.append(len(diffs))
+            cumudiff = count_difference(finish_dict[f'm{i}'], finish_dict[f'm{month_list[0]}'])
+            cumudiff_count.append(len(cumudiff))
+        else:
+            diff_count.append(0)
+            cumudiff_count.append(0)
+            
+    info = pd.DataFrame(dict(variation = variation_count, category = category_count, label = nobad_count, 
+                             mutual_information = mutual_count, diff = diff_count, cumu_diff = cumudiff_count,
+                             dimension_select = dim_count))
+    info.index = month_list
+    print('\n', info.T)
+        
+    return finish_dict
 
 
 ########## for testing data ##########
@@ -283,39 +332,44 @@ def drop_mutual_info(runhist_array, tolerate = 0):
 def train_col(train, test) :
 
     col_train = train.columns.to_list()
-    lack_col = [x for x in col_train if x not in test.columns]
+    test_lack = [x for x in col_train if x not in test.columns]
     test_temp = test.copy()
-    test_temp[lack_col] = 0
+    test_temp[test_lack] = 0
     test_final = test_temp[col_train]
 
     return test_final
 
 
-##### combine all above #####
-def drop_3criteria(array_dict, month_list):
+# In[55]:
+
+
+def training_def(select_dict, month_list):
     
-    finish_dict = {}
-    diff_count = []
-    for index, i in enumerate(month_list):
+    train_df = pd.DataFrame()
+    for i in month_list:
+        train_df = pd.concat([train_df, select_dict[f'm{i}']], axis = 0).fillna(0)
+    train_df = train_df.reset_index(drop = True)
+    label = train_df.GB
+    del train_df['GB']
+    train_df['GB'] = label
+    
+    return train_df
+
+
+def testing_def(select_dict, train_df, month_list):
+    
+    if len(month_list) == 1:
+        test_df = select_dict[f'm{month_list[0]}']
+    elif len(month_list) > 1:
+        test_df = training_def(select_dict, month_list)
+    test_df = train_col(train_df, test_df)
         
-        print(f'\nMonth {i}:\n')
-        temp_1 = drop_category(array_dict[f'm{i}'])
-        temp_2 = drop_variation(temp_1)
-        finish_dict[f'm{i}'] = drop_nobad(temp_2)
-        
-        if index > 0:
-            diffs = count_difference(finish_dict[f'm{i}'], finish_dict[f'm{month_list[index-1]}'])
-            diff_count.append(len(diffs))
-        else:
-            diff_count.append(0)
-    print('Diff in the every consecutive two months after feature selection:', diff_count)
-        
-    return finish_dict
+    return test_df
 
 
 # ### association rules
 
-# In[16]:
+# In[11]:
 
 
 ##### apriori between features #####
@@ -358,7 +412,7 @@ def view_apriori(runhist_array, min_sup = 0.001, min_confi = 0.2, min_lift = 3):
 
 # ### viewing bad data
 
-# In[7]:
+# In[12]:
 
 
 def Balance_Ratio(data, label = 'GB'):
@@ -393,7 +447,7 @@ def Bad_Type_def(data_all, label = 'GB'):
 
 # ### visualization
 
-# In[116]:
+# In[117]:
 
 
 ##### plot and compare the feature frequency in good & bad instances #####
@@ -475,11 +529,11 @@ def category_distribution(runhist_array, bin1 = 35, bin2 = 25, bin3 = 6):
     eqp_mean = runhist_array[eqp_list].apply(sum, axis = 1)
 
     fig, axs = plt.subplots(ncols = 3, figsize = (15, 5))
-    ax = sns.histplot(eqp_mean, bins = 35, color = 'orchid', ax = axs[0])
+    ax = sns.histplot(eqp_mean, bins = bin1, color = 'orchid', ax = axs[0])
     ax.set(title = '# Equipments in Instances', xlabel = '# Equipments')
-    ax = sns.histplot(op_mean, bins = 30, color = 'blue', ax = axs[1])
+    ax = sns.histplot(op_mean, bins = bin2, color = 'blue', ax = axs[1])
     ax.set(title = '# Operations in Instances', xlabel = '# Operations')
-    ax = sns.histplot(rework_mean, bins = 6, color = 'navy', ax = axs[2])
+    ax = sns.histplot(rework_mean, bins = bin3, color = 'navy', ax = axs[2])
     ax.set(title = '# Reworks in Instances', xlabel = '# Reworks')
     
     
@@ -496,10 +550,12 @@ def distance_histogram(runhist, bin1, bin2) :
     fig, axs = plt.subplots(ncols = 2, figsize = (12, 6))
     ax = sns.histplot(gb_matrix.flatten(), bins = bin1, color = 'purple', ax = axs[0])
     ax.set(title = 'Distribution of Distance between Good & Bad Instances', xlabel = 'Hamming Distance')
-    ax.vlines(np.mean(gb_matrix.flatten()), *ax.get_xlim(), color = 'black', linewidth = 10)
+    ylim_left = np.array(ax.get_ylim())*1.5
+    ax.vlines(np.mean(gb_matrix.flatten()), ylim_left[0], ylim_left[1], color = 'black', linewidth = 3)
     ax = sns.histplot(bb_matrix.flatten(), bins = bin2, color = 'red', ax = axs[1])
     ax.set(title = 'Distribution of Distance between Bad Instances', xlabel = 'Hamming Distance')
-    ax.vlines(np.mean(bb_matrix.flatten()), *ax.get_xlim(), color = 'black', linewidth = 10)
+    ylim_right = np.array(ax.get_ylim())*1.5
+    ax.vlines(np.mean(bb_matrix.flatten()), ylim_right[0], ylim_right[1], color = 'black', linewidth = 3)
     
     
 def distance_heatmap(runhist, bad_in_month) :    
@@ -517,18 +573,42 @@ def distance_heatmap(runhist, bad_in_month) :
     cumsum = list(np.cumsum(bad_in_month))
     ax.hlines(cumsum, *ax.get_xlim(), color = 'black', linewidth = 0.6)
     ax.vlines(cumsum, *ax.get_xlim(), color = 'black', linewidth = 0.6)
+    
+    
+def cumulative_bad(runhist_data, uni_module):
+    
+    runhist_module = uni_module[['id', 'shift_date']].merge(runhist_data, on = 'id', how = 'inner')
+    runhist_module = runhist_module.sort_values(by = 'shift_date')
+    bad_date = runhist_module[runhist_module['GB'] == 1].shift_date
+    year = bad_date.dt.year
+    month = bad_date.dt.month
+    day = np.array([1] + [15]*(len(year)-2) + [30])
+    date_dict = {'year': year, 'month': month, 'day': day}
+    new_time = pd.to_datetime(date_dict)
+    
+    fig = plt.figure(figsize = (15, 9))
+    grid = plt.GridSpec(10, 6)
+    main_ax = fig.add_subplot(grid[:-2, :])
+    y_hist = fig.add_subplot(grid[-2: , :], sharex = main_ax)
+    main_ax.plot(bad_date, range(len(bad_date)), linewidth = 3, color = 'black')
+    main_ax.set_title('Count of Bad Instance by Time')
+    main_ax.set_xlabel('date')
+    main_ax.set_ylabel('cumulative count')  
+    y_hist.hist(new_time, bins = 12, rwidth = 0.8, color = 'navy')
+    y_hist.set_ylabel('count by month')
+    y_hist.invert_yaxis()
 
-
+'''
 # ## 
 
 # ### loading module & runhist data
 
-# In[9]:
+# In[7]:
 
-'''
+
 ##### loading data #####
 ### event data ###
-module_m8_m1 = pd.read_csv("data/event/Module_all.csv").iloc[:,1:]
+module_m8_m3 = pd.read_csv("data/event/Module_all.csv").iloc[:, 1:]
 module_m23 = pd.read_csv('data/event/data_m2m3/module.csv')
 module_m45 = pd.read_csv('data/event/data_m4m5/module.csv')
 module_m67 = pd.read_csv('data/event/data_m6m7/module.csv')
@@ -541,6 +621,8 @@ runhist_array_m12 = pd.read_csv('data/new_runhist/runhist_array_m12.csv')
 runhist_array_m23 = pd.read_csv('data/new_runhist/runhist_array_m2m3.csv')
 runhist_array_m45 = pd.read_csv('data/new_runhist/runhist_array_m4m5.csv')
 runhist_array_m67 = pd.read_csv('data/new_runhist/runhist_array_m6m7.csv')
+runhist_array_m8_m7 = pd.concat([runhist_array_m8, runhist_array_m12, runhist_array_m1,
+                                 runhist_array_m23, runhist_array_m45, runhist_array_m67], axis = 0)
 
 id_mapping_m1 = pd.read_csv('data/new_runhist/id_mapping_m1.csv')
 id_mapping_m8 = pd.read_csv('data/new_runhist/id_mapping_m8m9m10m11.csv')
@@ -548,72 +630,87 @@ id_mapping_m12 = pd.read_csv('data/new_runhist/id_mapping_m12.csv')
 id_mapping_m23 = pd.read_csv('data/new_runhist/id_mapping_m2m3.csv')
 id_mapping_m45 = pd.read_csv('data/new_runhist/id_mapping_m4m5.csv')
 id_mapping_m67 = pd.read_csv('data/new_runhist/id_mapping_m6m7.csv')
+id_mapping_m8_m7 = pd.concat([id_mapping_m8, id_mapping_m12, id_mapping_m1, 
+                              id_mapping_m23, id_mapping_m45, id_mapping_m67], axis = 0)
 
 ##### combine the whole year data #####
-runhist_array_all = pd.concat([runhist_array_m8, runhist_array_m12, runhist_array_m1, 
-                               runhist_array_m23, runhist_array_m45, runhist_array_m67])
-id_mapping_all = pd.concat([id_mapping_m8, id_mapping_m12, id_mapping_m1, 
-                            id_mapping_m23, id_mapping_m45, id_mapping_m67])
-module_all = combine_module(module_m8_m1, module_m2_m7)
+module_m8_m7 = combine_module(module_m8_m3, module_m2_m7)
 
-print('Dimension of runhist array:', runhist_array_all.shape,
-      '\nDimension of id mapping:', id_mapping_all.shape,
-      '\nDimension of module:', module_all.shape)
+module_all = {}
+runhist_array_all = {}
+id_mapping_all = {}
+for i in range(1, 13):
+    
+    module_all[f'm{i}'] = module_month(module_m8_m7, i)
+    if i in range(8, 12):
+        runhist_array_all[f'm{i}'] = runhist_array_m8
+        id_mapping_all[f'm{i}'] = id_mapping_m8
+    elif i in range(2, 4):
+        runhist_array_all[f'm{i}'] = runhist_array_m23
+        id_mapping_all[f'm{i}'] = id_mapping_m23
+    elif i in range(4, 6):
+        runhist_array_all[f'm{i}'] = runhist_array_m45
+        id_mapping_all[f'm{i}'] = id_mapping_m45
+    elif i in range(6, 8):
+        runhist_array_all[f'm{i}'] = runhist_array_m67
+        id_mapping_all[f'm{i}'] = id_mapping_m67
+    elif i == 12:
+        runhist_array_all[f'm{i}'] = runhist_array_m12
+        id_mapping_all[f'm{i}'] = id_mapping_m12
+    else:
+        runhist_array_all[f'm{i}'] = runhist_array_m1
+        id_mapping_all[f'm{i}'] = id_mapping_m1
 
 
-# ### combine runhist array with one-month module and do feature selection
+# ### combine runhist array with one-month module & select features
 
-# In[129]:
+# In[28]:
 
 
-##### construct the data by each month #####
-### runhist array preprocessing ###
-runhist_array = runhist_array_f(runhist_array_all, id_mapping_all)
-module_uni = order_module(module_all)
-array_all = runhist_array.merge(module_uni, on = 'id', how = 'inner').drop(columns = 'shift_date')
-
-### combine with one-month module ###
 target_month = list(range(8, 13)) + list(range(1, 8))
-module_dict, array_dict = array_bymonth(runhist_array, module_all, target_month)
+
+### construct the data by each month ###
+runhist_dict = array_bymonth(runhist_array_all, id_mapping_all, module_all, target_month)
+runhist_all = training_def(runhist_dict, target_month)
 
 ### feature selection by each month ###
-array_done = drop_3criteria(array_dict, target_month)
+array_done = drop_4criteria(runhist_dict, target_month)
+array_all = training_def(array_done, target_month)
 
 
-# In[151]:
+# In[56]:
 
 
 ##### define training & testing data #####
-### training ###
-array_m234 = pd.concat([array_done['m2'], array_done['m3'], array_done['m4']], axis = 0).reset_index(drop = True).fillna(0)
-temp_cols = array_m234.columns.to_list()
-GB_pos = temp_cols.index('GB')
-new_cols = temp_cols[:GB_pos] + temp_cols[GB_pos+1: ] + temp_cols[GB_pos: GB_pos+1]
-array_m234 = array_m234[new_cols]
+training_month = range(1, 7)
+testing_month = range(7, 8)
+
+### training (only for filtering the features in the testing data) ###
+train_done = training_def(array_done, training_month)
 
 ### testing ###
-array_test = train_col(array_m234, array_done['m5'])
+test_done = testing_def(array_done, train_done, testing_month)
 
-
-# In[164]:
-
-
-for i in [2,3,4]:
+### save the file ###
+for i in training_month:
     array_done[f'm{i}'].to_csv(f'train_runhist_m{i}.csv')
-array_m234.to_csv('train_runhist_m234.csv')
-array_test.to_csv('test_runhist.csv')
+train_done.to_csv('train_runhist_all.csv')
+test_done.to_csv('test_runhist.csv')
 
 
 # ### viewing association rules & number of bad types
 
-# In[162]:
+# In[80]:
 
 
 ##### bad types #####
-bad_types = Bad_Type_def(array_all)
+target_month = list(range(8, 13)) + list(range(1, 8))
+for i in target_month:
+    print(f'Month {i}:')
+    bad_types = Bad_Type_def(array_done[f'm{i}'])
 
 
-# In[110]:
+# In[81]:
 
 
 ##### apriori #####
@@ -622,25 +719,25 @@ view_apriori(array_all, min_sup = 0.001, min_confi = 0.2, min_lift = 3)
 
 # ### visualization
 
-# In[106]:
+# In[88]:
 
 
 ##### plot distribution of features #####
-feature_distribution(array_all)
+feature_distribution(runhist_all)
 
 
-# In[107]:
+# In[95]:
 
 
 #### counts of equipment & operation used in each instances #####
-category_distribution(array_all, bin1 = 35, bin2 = 15, bin3 = 6)   
+category_distribution(runhist_all, bin1 = 25, bin2 = 15, bin3 = 6)   
 
 
-# In[108]:
+# In[99]:
 
 
 ##### plot and compare the feature frequency (by category) in good & bad instances #####
-array_target = array_all
+array_target = runhist_all
 
 bar_rework = feature_gb(array_target, target = 'Rework', figsize = (12, 6))
 # bar_rework.set(xlim = (0, 250)) # zoom in to examine extremely low frequency rework 
@@ -651,17 +748,24 @@ bar_op = feature_gb(array_target, target = 'Operation', figsize = (15, 9))
 bar_eqp = feature_gb(array_target, target = 'Equipment', figsize = (25, 15))
 
 
-# In[117]:
+# In[100]:
 
 
 ##### plot distance between instances #####
 distance_histogram(array_all, bin1 = 40, bin2 = 35)
 
 
-# In[109]:
+# In[101]:
 
 
 ##### show the distance between bad instances by heatmap #####
 bad_counts = [8, 11, 13, 8, 17, 7, 28, 52, 54, 52, 7, 37]
 distance_heatmap(array_all, bad_counts)
+
+
+# In[118]:
+
+
+##### cumulative counts of bad instances by time #####
+cumulative_bad(array_all, module_m8_m7)
 '''

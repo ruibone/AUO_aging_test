@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
+# In[1]:
 
 
 import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sn
 import random
 import pickle
 from tqdm.auto import tqdm
@@ -15,6 +16,8 @@ from tqdm.auto import tqdm
 from sklearn.linear_model import LogisticRegression, RidgeCV, Ridge
 from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor, RandomForestClassifier, RandomForestRegressor,    AdaBoostClassifier, AdaBoostRegressor
 from sklearn.model_selection import train_test_split
+from sklearn.inspection import permutation_importance
+import shap
 from catboost import CatBoostClassifier, CatBoostRegressor
 from lightgbm import LGBMClassifier, LGBMRegressor
 from xgboost import XGBClassifier, XGBRegressor
@@ -29,16 +32,16 @@ from library.LightGBM import LightGBM_creator
 from library.CatBoost import CatBoost_creator
 from library.Random_Forest import RandomForest_creator
 from library.Extra_Trees import ExtraTrees_creator
-'''
+
 os.chdir('C:/Users/user/Desktop/Darui_R08621110')  
 os.getcwd()
-'''
+
 
 # ## 
 
 # ### optimize base learner
 
-# In[ ]:
+# In[3]:
 
 
 def month_param(num_set, date, month_list, model_list, iter_list, filename, mode, TPE_multi):
@@ -152,7 +155,7 @@ def optimize_base(num_set, train_data, mode, TPE_multi, base_list, iter_list, fi
 
 # ### transform data by base learner
 
-# In[ ]:
+# In[4]:
 
 
 def stratified_data(train_data, cv):
@@ -183,8 +186,7 @@ def stratified_data(train_data, cv):
         bad_valid = bad.loc[bad_valid_index]
         train = pd.concat([good_train, bad_train], axis = 0)
         valid = pd.concat([good_valid, bad_valid], axis = 0)
-        train_x_dict[i], train_y_dict[i], valid_x_dict[i], valid_y_dict[i] = label_divide(train, valid, 
-                                                                                          train_only = False)
+        train_x_dict[i], train_y_dict[i], valid_x_dict[i], valid_y_dict[i] = label_divide(train, valid, train_only = False)
 
     return train_x_dict, train_y_dict, valid_x_dict, valid_y_dict
 
@@ -444,7 +446,7 @@ def transform_test(train_data, test_data, num_set, mode, base_param):
 
 # ### meta learner
 
-# In[ ]:
+# In[5]:
 
 
 def LR(train_x, test_x, train_y, test_y, config):
@@ -528,7 +530,7 @@ def runall_RidgeR(num_set, trainset_x, testset_x, trainset_y, testset_y, config,
 
 # ### feature importance
 
-# In[ ]:
+# In[6]:
 
 
 def correlation_plot(target_data):
@@ -547,7 +549,7 @@ def vif(target_data):
     return vif
 
 
-def forest_importance(target_data, mode = 'R'):
+def forest_importance(target_data, mode = 'C'):
     
     colname = target_data.columns.to_list()[:-1]
     X, Y = label_divide(target_data, None, 'GB', train_only = True)
@@ -571,7 +573,7 @@ def forest_importance(target_data, mode = 'R'):
     return importances
     
     
-def forest_permutation(target_data, mode = 'R'):
+def forest_permutation(target_data, mode = 'C'):
     
     colnames = target_data.columns.to_list()[:-1]
     X, Y = label_divide(target_data, None, 'GB', train_only = True)
@@ -621,7 +623,7 @@ def forest_shap(target_data, mode = 'R'):
     return shap_df
 
 
-def GLM_coefficient(target_data, mode = 'R'):
+def GLM_coefficient(target_data, mode = 'C'):
     
     colnames = target_data.columns.to_list()[:-1]
     X, Y = label_divide(target_data, None, 'GB', train_only = True)
@@ -639,13 +641,13 @@ def GLM_coefficient(target_data, mode = 'R'):
 
 
 #####!!!!! forest_shap can only run for regressor !!!!!#####
-def rank_importance(target_data, mode = 'R'):
+def rank_importance(target_data, mode = 'C'):
     
     correlation = correlation_plot(target_data)
     coefficient = GLM_coefficient(target_data, mode = mode).GLM
     forest = forest_importance(target_data, mode = mode).importance
     permutation = forest_permutation(target_data, mode = mode).importance
-    shapvalue = forest_shap(target_data, mode = mode).value
+    shapvalue = forest_shap(target_data).value
     rank_df = pd.DataFrame()
     rank_df['GLM'] = coefficient.rank(ascending = False)
     rank_df['forest'] = forest.rank(ascending = False)
@@ -659,10 +661,10 @@ def rank_importance(target_data, mode = 'R'):
 
 # ### optuna
 
-# In[ ]:
+# In[7]:
 
 
-def stackingCV_creator(train_data, mode, num_valid = 3) :
+def stackingCV_creator(train_data, mode, num_valid = 3, label = 'GB') :
     
     def objective(trial) :
         # hyperparameters randomize setting
@@ -705,8 +707,16 @@ def stackingCV_creator(train_data, mode, num_valid = 3) :
         result_list = []
         for i in range(num_valid):
 
-            train_x, train_y = label_divide(train_data, None, 'GB', train_only = True)
-            train_x, valid_x, train_y, valid_y = train_test_split(train_x, train_y, test_size = 0.25)
+            train_good = train_data[train_data.GB == 0]
+            train_bad = train_data[train_data.GB == 1]
+            train_good_x, train_good_y = label_divide(train_good, None, label, train_only = True)
+            train_bad_x, train_bad_y = label_divide(train_bad, None, label, train_only = True)
+            train_g_x, valid_g_x, train_g_y, valid_g_y = train_test_split(train_good_x, train_good_y, test_size = 0.25)
+            train_b_x, valid_b_x, train_b_y, valid_b_y = train_test_split(train_bad_x, train_bad_y, test_size = 0.25)
+            train_x = pd.concat([train_g_x, train_b_x], axis = 0)
+            train_y = pd.concat([train_g_y, train_b_y], axis = 0)
+            valid_x = pd.concat([valid_g_x, valid_b_x], axis = 0)
+            valid_y = pd.concat([valid_g_y, valid_b_y], axis = 0)
 
             if mode == 'C':
                 result, _ = LR(train_x, valid_x, train_y, valid_y, param)
@@ -730,11 +740,11 @@ def stackingCV_creator(train_data, mode, num_valid = 3) :
 
 # ### loading training & testing data
 
-# In[ ]:
+# In[8]:
 
 
 ### training data ### 
-training_month = [2, 3, 4]
+training_month = range(1, 7)
 
 data_dict, trainset_x, trainset_y = multiple_month(training_month, num_set = 10, filename = 'dataset')
 
@@ -762,39 +772,40 @@ base_param_monthC = optimize_base(num_set = 10,
                                   train_data = data_dict, 
                                   mode = 'C', 
                                   TPE_multi = True, 
-                                  base_list = ['XGBoost', 'LightGBM'],
-                                  iter_list = [200, 200],
-                                  filename = 'runhist_array_4criteria_m2m5')
+                                  base_list = ['XGBoost', 'LightGBM', 'CatBoost', 'RandomForest'],
+                                  iter_list = [200, 200, 200, 50],
+                                  filename = 'runhist_array_m1m6_m7_3criteria')
  
-base_param_monthR = optimize_base(num_set = 10, 
-                                  train_data = data_dict, 
-                                  mode = 'R', 
-                                  TPE_multi = True, 
-                                  base_list = ['XGBoost', 'LightGBM'],
-                                  iter_list = [200, 200],
-                                  filename = 'runhist_array_4criteria_m2m5')
+# base_param_monthR = optimize_base(num_set = 10, 
+#                                   train_data = data_dict, 
+#                                   mode = 'R', 
+#                                   TPE_multi = True, 
+#                                   base_list = ['XGBoost', 'LightGBM'],
+#                                   iter_list = [200, 200],
+#                                   filename = 'runhist_array_4criteria_m2m5')
 
 
-# In[ ]:
+# In[9]:
 
 
 ##### 'OR' by loading from stackingCV scheme 2 #####
 base_param_monthC = month_param(num_set = 10, 
-                                date = '20211019', 
-                                month_list = [2, 3, 4], 
-                                model_list = ['XGBoost', 'LightGBM'], 
-                                iter_list = [200, 200], 
-                                filename = 'runhist_array_4criteria_m2m5', 
+                                date = '20211123', 
+                                month_list = list(range(4, 7)), 
+                                model_list = ['RandomForest', 'LightGBM', 'CatBoost'], 
+                                iter_list = [50, 200, 200], 
+                                filename = 'runhist_array_m1m6_m7_3criteria', 
                                 mode = 'C', 
-                                TPE_multi = True)
-base_param_monthR = month_param(num_set = 10, 
-                                date = '20211019', 
-                                month_list = [2, 3, 4], 
-                                model_list = ['XGBoost', 'LightGBM'], 
-                                iter_list = [200, 200], 
-                                filename = 'runhist_array_4criteria_m2m5', 
-                                mode = 'R', 
-                                TPE_multi = True)
+                                TPE_multi = False)
+
+# base_param_monthR = month_param(num_set = 10, 
+#                                 date = '20211019', 
+#                                 month_list = [2, 3, 4], 
+#                                 model_list = ['XGBoost', 'LightGBM'], 
+#                                 iter_list = [200, 200], 
+#                                 filename = 'runhist_array_4criteria_m2m5', 
+#                                 mode = 'R', 
+#                                 TPE_multi = True)
 
 
 # #### for testing data transformation
@@ -806,70 +817,56 @@ base_param_monthR = month_param(num_set = 10,
 base_param_allC = optimize_base(num_set = 10, 
                                 train_data = {'all': run_train}, 
                                 mode = 'C', 
-                                TPE_multi = True, 
-                                base_list = ['XGBoost', 'LightGBM'], 
-                                iter_list = [200, 200],
-                                filename = 'runhist_array_4criteria_m2m5')
+                                TPE_multi = False, 
+                                base_list = ['LightGBM', 'CatBoost', 'RandomForest'], 
+                                iter_list = [200, 200, 50],
+                                filename = 'runhist_array_m1m6_m7_3criteria')
 
-base_param_allR = optimize_base(num_set = 10, 
-                                train_data = {'all': run_train}, 
-                                mode = 'R', 
-                                TPE_multi = True, 
-                                base_list = ['XGBoost', 'LightGBM'], 
-                                iter_list = [200, 200],
-                                filename = 'runhist_array_4criteria_m2m5')
+# base_param_allR = optimize_base(num_set = 10, 
+#                                 train_data = {'all': run_train}, 
+#                                 mode = 'R', 
+#                                 TPE_multi = True, 
+#                                 base_list = ['XGBoost', 'LightGBM'], 
+#                                 iter_list = [200, 200],
+#                                 filename = 'runhist_array_4criteria_m2m5')
 
 
-# In[ ]:
+# In[10]:
 
 
 ##### 'OR' by loading from stackingCV scheme 1 #####
 base_param_allC = all_param(num_set = 10, 
-                           date = '20211019', 
-                           model_list = ['XGBoost', 'LightGBM'], 
-                           iter_list = [200, 200], 
-                           filename = 'runhist_array_m2m5_4selection', 
+                           date = '20211123', 
+                           model_list = ['LightGBM', 'CatBoost', 'RandomForest'], 
+                           iter_list = [200, 200, 50], 
+                           filename = 'runhist_array_m1m6_m7_3criteria', 
                            mode = 'C', 
-                           TPE_multi = True)
-base_param_allR = all_param(num_set = 10, 
-                           date = '20211019', 
-                           model_list = ['XGBoost', 'LightGBM'], 
-                           iter_list = [200, 200], 
-                           filename = 'runhist_array_m2m5_4selection', 
-                           mode = 'R', 
-                           TPE_multi = True)
+                           TPE_multi = False)
+
+# base_param_allR = all_param(num_set = 10, 
+#                            date = '20211123', 
+#                            model_list = ['XGBoost', 'LightGBM'], 
+#                            iter_list = [200, 200], 
+#                            filename = 'runhist_array_m2m5_4selection', 
+#                            mode = 'R', 
+#                            TPE_multi = True)
 
 
+# 
 # ### data transform for scheme 3
 
 # In[ ]:
 
 
-train_firstC = transform_train(data_dict, 
-                               num_set = 10, 
-                               mode = 'C', 
-                               base_param = base_param_monthC, 
-                               cv = 5)
-test_firstC = transform_test(run_train, 
-                             run_test, 
-                             num_set = 10, 
-                             mode = 'C', 
-                             base_param = dict(all = base_param_allC))
+train_firstC = transform_train(data_dict, num_set = 10, mode = 'C', base_param = base_param_monthC, cv = 5)
+test_firstC = transform_test(run_train, run_test, num_set = 10, mode = 'C', base_param = dict(all = base_param_allC))
 train_firstC_x, train_firstC_y = train_set(train_firstC, num_set = 10)
 test_firstC_x, test_firstC_y = train_set(test_firstC, num_set = 10) 
 
-train_firstR = transform_train(data_dict, 
-                               num_set = 10, 
-                               mode = 'R', 
-                               base_param = base_param_monthR, 
-                               cv = 5)
-test_firstR = transform_test(run_train, 
-                             run_test, 
-                             num_set = 10,
-                             mode = 'R',
-                             base_param = dict(all = base_param_allR))
-train_firstR_x, train_firstR_y = train_set(train_firstR, num_set = 10)
-test_firstR_x, test_firstR_y = train_set(test_firstR, num_set = 10) 
+# train_firstR = transform_train(data_dict, num_set = 10, mode = 'R', base_param = base_param_monthR, cv = 5)
+# test_firstR = transform_test(run_train, run_test, num_set = 10, mode = 'R', base_param = dict(all = base_param_allR))
+# train_firstR_x, train_firstR_y = train_set(train_firstR, num_set = 10)
+# test_firstR_x, test_firstR_y = train_set(test_firstR, num_set = 10) 
 
 
 # ## meta learner
@@ -882,20 +879,20 @@ test_firstR_x, test_firstR_y = train_set(test_firstR, num_set = 10)
 best_paramC, _ = all_optuna(num_set = 10, 
                             all_data = train_firstC, 
                             mode = 'C', 
-                            TPE_multi = True, 
+                            TPE_multi = False, 
                             n_iter = 10,
-                            filename = f'runhist_array_4criteria_m2m5_StackingCV3',
+                            filename = 'runhist_array_m1m6_m7_3criteria_StackingCV3',
                             creator = stackingCV_creator
 )
 
-best_paramR, _ = all_optuna(num_set = 10, 
-                            all_data = train_firstR, 
-                            mode = 'R', 
-                            TPE_multi = True, 
-                            n_iter = 10,
-                            filename = f'runhist_array_4criteria_m2m5_StackingCV3',
-                            creator = stackingCV_creator
-)
+# best_paramR, _ = all_optuna(num_set = 10, 
+#                             all_data = train_firstR, 
+#                             mode = 'R', 
+#                             TPE_multi = True, 
+#                             n_iter = 10,
+#                             filename = f'runhist_array_4criteria_m2m5_StackingCV3',
+#                             creator = stackingCV_creator
+# )
 
 
 # ### feature selection by feature importance
@@ -903,7 +900,7 @@ best_paramR, _ = all_optuna(num_set = 10,
 # In[ ]:
 
 
-rank_importance(train_firstR['set7'], mode = 'R')
+rank_importance(train_firstC['set7'], mode = 'C')
 
 
 # ### classifier
@@ -918,7 +915,6 @@ line_chart(table_setC, title = 'StackingCV Classifier (scheme 3)')
 # In[ ]:
 
 
-print(coefC)
 table_setC
 
 
@@ -946,16 +942,11 @@ table_setR
 # In[ ]:
 
 
-savedate = '20211019'
+savedate = '20211123'
 TPE_multi = True
 
 table_setC['sampler'] = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
-table_setR['sampler'] = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
 table_setC['model'] = 'StackingCV 3'
-table_setR['model'] = 'StackingCV 3'
 with pd.ExcelWriter(f'{savedate}_Classifier.xlsx', mode = 'a') as writer:
     table_setC.to_excel(writer, sheet_name = 'StackingCV_3')
-with pd.ExcelWriter(f'{savedate}_Regressor.xlsx', mode = 'a') as writer:
-    table_setR.to_excel(writer, sheet_name = 'StackingCV_3')
-
 '''

@@ -35,10 +35,12 @@ os.getcwd()
 def multiple_month(month_list, num_set, filename = 'dataset'):
     
     month_dict = {}
+    trainset_x = {}
+    trainset_y = {}
     for i in month_list:
         print(f'\nMonth {i}:\n')
         month_dict[f'm{i}'] = multiple_set(num_set = num_set, filename = f'm{i}_{filename}')
-        trainset_x, trainset_y = train_set(month_dict[f'm{i}'], num_set = num_set)
+        trainset_x[f'm{i}'], trainset_y[f'm{i}'] = train_set(month_dict[f'm{i}'], num_set = num_set)
         
     return month_dict, trainset_x, trainset_y
 
@@ -78,8 +80,8 @@ def cf_matrix(predict, train_y):
     # confusion matrix
     mask_FP = predict['predict'] > predict['truth']
     mask_FN = predict['predict'] < predict['truth']
-    mask_TP = (predict['predict'] == predict['truth']) * (predict['predict'] == 1)
-    mask_TN = (predict['predict'] == predict['truth']) * (predict['predict'] == 0)
+    mask_TP = (predict['predict'] == predict['truth']) & (predict['predict'] == 1)
+    mask_TN = (predict['predict'] == predict['truth']) & (predict['predict'] == 0)
     TP = mask_TP.sum()
     FP = mask_FP.sum()
     FN = mask_FN.sum()
