@@ -136,7 +136,7 @@ def RandomForest_creator(train_data, mode, num_valid = 3, label = 'GB') :
                 recall = table['Recall']
                 aging = table['Aging Rate']
                 effi = table['Efficiency']
-                result_list.append(recall - 0.1*aging)
+                result_list.append((recall+2*precision))
 
             elif mode == 'R':
                 result = RandomForestR(train_x, valid_x, train_y, valid_y, param)

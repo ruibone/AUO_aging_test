@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[29]:
 
 
 import os
@@ -21,9 +21,12 @@ import shap
 from catboost import CatBoostClassifier, CatBoostRegressor
 from lightgbm import LGBMClassifier, LGBMRegressor
 from xgboost import XGBClassifier, XGBRegressor
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
 import optuna
 
-from library.Data_Preprocessing import Balance_Ratio
+from library.Data_Preprocessing import Balance_Ratio, train_col
 from library.Imbalance_Sampling import label_divide
 from library.Aging_Score_Contour import score1
 from library.AdaBoost import train_set, multiple_set, multiple_month, line_chart, cf_matrix, AUC, PR_curve,      multiple_curve, PR_matrix, best_threshold, all_optuna, optuna_history, AdaBoost_creator 
@@ -32,6 +35,7 @@ from library.LightGBM import LightGBM_creator
 from library.CatBoost import CatBoost_creator
 from library.Random_Forest import RandomForest_creator
 from library.Extra_Trees import ExtraTrees_creator
+from library.Neural_Network import RunhistSet, NeuralNetworkC, trainingC, NeuralNetwork_creator
 
 os.chdir('C:/Users/user/Desktop/Darui_R08621110')  
 os.getcwd()
@@ -41,7 +45,7 @@ os.getcwd()
 
 # ### optimize base learner
 
-# In[3]:
+# In[2]:
 
 
 def month_param(num_set, date, month_list, model_list, iter_list, filename, mode, TPE_multi):
@@ -84,6 +88,17 @@ def optimize_base(num_set, train_data, mode, TPE_multi, base_list, iter_list, fi
     for i in tqdm(month_list):
         
         best_param[f'{i}'] = {}
+        if 'NeuralNetwork' in base_list:
+            print('\nStarting for NeuralNetwork:\n')
+            model_index = base_list.index('NeuralNetwork')
+            best_param[f'{i}'][f'NeuralNetwork'], _ = all_optuna(num_set = num_set, 
+                                                                 all_data = train_data[f'{i}'], 
+                                                                 mode = mode, 
+                                                                 TPE_multi = TPE_multi, 
+                                                                 n_iter = iter_list[model_index],
+                                                                 filename = f'{filename}_{i}_NeuralNetwork',
+                                                                 creator = NeuralNetwork_creator)
+        
         if 'XGBoost' in base_list:
             print('\nStarting for XGBoost:\n')
             model_index = base_list.index('XGBoost')
@@ -155,7 +170,7 @@ def optimize_base(num_set, train_data, mode, TPE_multi, base_list, iter_list, fi
 
 # ### transform data by base learner
 
-# In[4]:
+# In[3]:
 
 
 def stratified_data(train_data, cv):
@@ -209,6 +224,28 @@ def transform_train(train_data, num_set, mode, base_param, cv):
                 
                 model_predict = pd.DataFrame()
                 if mode == 'C':
+                    
+                    if 'NeuralNetwork' in model_list:
+                        temp_train = RunhistSet(train_x_dict[j], train_y_dict[j])
+                        temp_valid = RunhistSet(valid_x_dict[j], valid_y_dict[j])
+                        train_loader = DataLoader(temp_train, 
+                                                  batch_size = base_param[month]['NeuralNetwork'][f'set{i}']['batch_size'], 
+                                                  shuffle = True)
+                        valid_loader = DataLoader(temp_valid, batch_size = len(valid_x_dict[j]), shuffle = False)
+                        nn_model = NeuralNetworkC(dim = train_x_dict[j].shape[1])
+                        optimizer = torch.optim.Adam(nn_model.parameters(), 
+                                                     lr = base_param[month]['NeuralNetwork'][f'set{i}']['learning_rate'], 
+                                                     weight_decay = base_param[month]['NeuralNetwork'][f'set{i}']['weight_decay'])
+                        criterion = nn.CrossEntropyLoss(
+                            weight = torch.tensor([1-base_param[month]['NeuralNetwork'][f'set{i}']['bad_weight'], 
+                                                   base_param[month]['NeuralNetwork'][f'set{i}']['bad_weight']])).to('cpu')
+                        network, _, _ = trainingC(nn_model, train_loader, train_loader, optimizer, criterion, epoch = 100, 
+                                                  filename = 'none', early_stop = 10)
+                        for x, y in valid_loader:
+                            output = network(x)
+                            _, predict_y = torch.max(output.data, 1)
+                        predict = pd.DataFrame({'N': predict_y.numpy()})
+                        model_predict = pd.concat([model_predict, predict], axis = 1)
 
                     if 'XGBoost' in model_list:                     
                         clf = XGBClassifier(**base_param[month]['XGBoost'][f'set{i}'], n_jobs = -1)
@@ -335,6 +372,29 @@ def transform_test(train_data, test_data, num_set, mode, base_param):
             model_predict = pd.DataFrame()
             if mode == 'C':
 
+                if 'NeuralNetwork' in model_list:
+                    temp_train = RunhistSet(train_x, train_y)
+                    temp_test = RunhistSet(test_x, test_y)
+                    train_loader = DataLoader(temp_train, 
+                                              batch_size = base_param[month]['NeuralNetwork'][f'set{i}']['batch_size'], 
+                                              shuffle = True)
+                    test_loader = DataLoader(temp_test, batch_size = len(test_x), shuffle = False)
+                    nn_model = NeuralNetworkC(dim = train_x.shape[1])
+                    optimizer = torch.optim.Adam(nn_model.parameters(), 
+                                                 lr = base_param[month]['NeuralNetwork'][f'set{i}']['learning_rate'], 
+                                                 weight_decay = base_param[month]['NeuralNetwork'][f'set{i}']['weight_decay'])
+                    criterion = nn.CrossEntropyLoss(
+                        weight = torch.tensor([1-base_param[month]['NeuralNetwork'][f'set{i}']['bad_weight'], 
+                                               base_param[month]['NeuralNetwork'][f'set{i}']['bad_weight']])).to('cpu')
+                    network, _, _ = trainingC(nn_model, train_loader, train_loader, optimizer, criterion, epoch = 100, 
+                                              filename = 'none', early_stop = 10)
+                    for X, Y in test_loader:
+                        X, Y = X.float(), Y.long()
+                        output = network(X)
+                        _, predict_y = torch.max(output.data, 1)
+                    predict = pd.DataFrame({'N': predict_y.numpy()})
+                    model_predict = pd.concat([model_predict, predict], axis = 1)
+                
                 if 'XGBoost' in model_list:
                     clf = XGBClassifier(**base_param[month]['XGBoost'][f'set{i}'], n_jobs = -1)
                     clf.fit(train_x, train_y)
@@ -446,14 +506,21 @@ def transform_test(train_data, test_data, num_set, mode, base_param):
 
 # ### meta learner
 
-# In[5]:
+# In[12]:
 
 
 def LR(train_x, test_x, train_y, test_y, config):
     
-    clf = LogisticRegression(**config)
-    clf.fit(train_x, train_y)
-    coef = clf.coef_
+    subconfig = config.copy()
+    del subconfig['meta_learner']
+    if config['meta_learner'] == 'LogisticRegression':
+        clf = LogisticRegression(**subconfig)
+        clf.fit(train_x, train_y)
+        coef = clf.coef_
+    elif config['meta_learner'] == 'ExtraTrees':
+        clf = ExtraTreesClassifier(**subconfig)
+        clf.fit(train_x, train_y)
+        coef = clf.feature_importances_
     predict_y = clf.predict(test_x)
     result = pd.DataFrame({'truth': test_y, 'predict': predict_y})
     
@@ -530,7 +597,7 @@ def runall_RidgeR(num_set, trainset_x, testset_x, trainset_y, testset_y, config,
 
 # ### feature importance
 
-# In[6]:
+# In[5]:
 
 
 def correlation_plot(target_data):
@@ -661,7 +728,7 @@ def rank_importance(target_data, mode = 'C'):
 
 # ### optuna
 
-# In[7]:
+# In[20]:
 
 
 def stackingCV_creator(train_data, mode, num_valid = 3, label = 'GB') :
@@ -669,9 +736,9 @@ def stackingCV_creator(train_data, mode, num_valid = 3, label = 'GB') :
     def objective(trial) :
         # hyperparameters randomize setting
         if mode == 'C' :
-            meta_learner = 'Logistic Regression'
+            meta_learner = {'meta_learner': trial.suggest_categorical('meta_learner', ['LogisticRegression', 'ExtraTrees'])}
             
-            if meta_learner == 'Logistic Regression' :      
+            if meta_learner['meta_learner'] == 'LogisticRegression' :      
                 param = {
                     'solver': 'lbfgs',
                     'C': trial.suggest_categorical('C', [100, 10 ,1 ,0.1, 0.01]),
@@ -679,13 +746,15 @@ def stackingCV_creator(train_data, mode, num_valid = 3, label = 'GB') :
                     'n_jobs': -1
                 }
 
-            elif meta_learner == 'Extra Trees' :
+            elif meta_learner['meta_learner'] == 'ExtraTrees' :
                 param = {
-                    'n_estimators': trial.suggest_int('n_estimators', 100, 500, step = 100),
+                    'n_estimators': trial.suggest_int('n_estimators', 100, 500, step = 200),
                     'min_samples_split': trial.suggest_int('min_samples_split', 2, 32, step = 5),
                     'max_depth': trial.suggest_int('max_depth', 3, 21, step = 3),
                     'n_jobs': -1
-                }     
+                }
+            
+            param.update(meta_learner)
 
         elif mode == 'R' :
             meta_learner = 'RidgeCV'
@@ -722,8 +791,9 @@ def stackingCV_creator(train_data, mode, num_valid = 3, label = 'GB') :
                 result, _ = LR(train_x, valid_x, train_y, valid_y, param)
                 table = cf_matrix(result, valid_y)
                 recall = table['Recall']
+                precision = table['Precision']
                 aging = table['Aging Rate']
-                result_list.append(recall - 0.1*aging)
+                result_list.append(recall+2*precision)
 
             elif mode == 'R':
                 result, _ = RidgeR(train_x, valid_x, train_y, valid_y, param)
@@ -740,11 +810,11 @@ def stackingCV_creator(train_data, mode, num_valid = 3, label = 'GB') :
 
 # ### loading training & testing data
 
-# In[8]:
+# In[7]:
 
 
 ### training data ### 
-training_month = range(1, 7)
+training_month = range(2, 5)
 
 data_dict, trainset_x, trainset_y = multiple_month(training_month, num_set = 10, filename = 'dataset')
 
@@ -772,10 +842,10 @@ base_param_monthC = optimize_base(num_set = 10,
                                   train_data = data_dict, 
                                   mode = 'C', 
                                   TPE_multi = True, 
-                                  base_list = ['XGBoost', 'LightGBM', 'CatBoost', 'RandomForest'],
-                                  iter_list = [200, 200, 200, 50],
-                                  filename = 'runhist_array_m1m6_m7_3criteria')
- 
+                                  base_list = ['NeuralNetwork', 'XGBoost', 'LightGBM'],
+                                  iter_list = [20, 200, 200],
+                                  filename = 'runhist_array_m2m4_m5_3criteria')
+
 # base_param_monthR = optimize_base(num_set = 10, 
 #                                   train_data = data_dict, 
 #                                   mode = 'R', 
@@ -785,16 +855,16 @@ base_param_monthC = optimize_base(num_set = 10,
 #                                   filename = 'runhist_array_4criteria_m2m5')
 
 
-# In[9]:
+# In[8]:
 
 
 ##### 'OR' by loading from stackingCV scheme 2 #####
 base_param_monthC = month_param(num_set = 10, 
-                                date = '20211123', 
-                                month_list = list(range(4, 7)), 
-                                model_list = ['RandomForest', 'LightGBM', 'CatBoost'], 
-                                iter_list = [50, 200, 200], 
-                                filename = 'runhist_array_m1m6_m7_3criteria', 
+                                date = '20211207', 
+                                month_list = list(range(2, 5)), 
+                                model_list = ['NeuralNetwork', 'LightGBM', 'XGBoost'], 
+                                iter_list = [20, 200, 200], 
+                                filename = 'runhist_array_m2m4_m5_3criteria', 
                                 mode = 'C', 
                                 TPE_multi = False)
 
@@ -831,15 +901,15 @@ base_param_allC = optimize_base(num_set = 10,
 #                                 filename = 'runhist_array_4criteria_m2m5')
 
 
-# In[10]:
+# In[9]:
 
 
 ##### 'OR' by loading from stackingCV scheme 1 #####
 base_param_allC = all_param(num_set = 10, 
-                           date = '20211123', 
-                           model_list = ['LightGBM', 'CatBoost', 'RandomForest'], 
-                           iter_list = [200, 200, 50], 
-                           filename = 'runhist_array_m1m6_m7_3criteria', 
+                           date = '20211207', 
+                           model_list = ['NeuralNetwork', 'LightGBM', 'XGBoost'], 
+                           iter_list = [20, 200, 200], 
+                           filename = 'runhist_array_m2m4_m5_3criteria', 
                            mode = 'C', 
                            TPE_multi = False)
 
@@ -855,7 +925,7 @@ base_param_allC = all_param(num_set = 10,
 # 
 # ### data transform for scheme 3
 
-# In[ ]:
+# In[31]:
 
 
 train_firstC = transform_train(data_dict, num_set = 10, mode = 'C', base_param = base_param_monthC, cv = 5)
@@ -873,7 +943,7 @@ test_firstC_x, test_firstC_y = train_set(test_firstC, num_set = 10)
 
 # ### searching for best hyperparameters
 
-# In[ ]:
+# In[21]:
 
 
 best_paramC, _ = all_optuna(num_set = 10, 
@@ -881,7 +951,7 @@ best_paramC, _ = all_optuna(num_set = 10,
                             mode = 'C', 
                             TPE_multi = False, 
                             n_iter = 10,
-                            filename = 'runhist_array_m1m6_m7_3criteria_StackingCV3',
+                            filename = 'runhist_array_m2m4_m5_3criteria_StackingCV3',
                             creator = stackingCV_creator
 )
 
@@ -897,7 +967,7 @@ best_paramC, _ = all_optuna(num_set = 10,
 
 # ### feature selection by feature importance
 
-# In[ ]:
+# In[22]:
 
 
 rank_importance(train_firstC['set7'], mode = 'C')
@@ -905,14 +975,14 @@ rank_importance(train_firstC['set7'], mode = 'C')
 
 # ### classifier
 
-# In[ ]:
+# In[32]:
 
 
 table_setC, coefC = runall_LR(10, train_firstC_x, test_firstC_x, train_firstC_y, test_firstC_y, best_paramC)
 line_chart(table_setC, title = 'StackingCV Classifier (scheme 3)')
 
 
-# In[ ]:
+# In[33]:
 
 
 table_setC
@@ -942,8 +1012,8 @@ table_setR
 # In[ ]:
 
 
-savedate = '20211123'
-TPE_multi = True
+savedate = '20211207'
+TPE_multi = False
 
 table_setC['sampler'] = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
 table_setC['model'] = 'StackingCV 3'

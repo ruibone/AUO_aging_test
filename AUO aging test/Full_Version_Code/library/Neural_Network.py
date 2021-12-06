@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[34]:
+# In[1]:
 
 
 import os
@@ -22,7 +22,7 @@ from torch.nn.modules.loss import _WeightedLoss
 from library.Data_Preprocessing import Balance_Ratio, train_col
 from library.Imbalance_Sampling import label_divide
 from library.Aging_Score_Contour import score1
-from library.AdaBoost import train_set, multiple_set, multiple_month, line_chart, AUC, PR_curve, multiple_curve,     best_threshold
+from library.AdaBoost import train_set, multiple_set, multiple_month, line_chart, AUC, PR_curve, multiple_curve,     best_threshold, all_optuna
 
 os.chdir('C:/Users/user/Desktop/Darui_R08621110')  
 os.getcwd()
@@ -58,7 +58,7 @@ class RunhistSet(Dataset):
 
 # ### Neural Network
 
-# In[30]:
+# In[4]:
 
 
 class NeuralNetworkC(nn.Module):
@@ -69,7 +69,7 @@ class NeuralNetworkC(nn.Module):
             nn.Linear(dim, 64),
             nn.ReLU(),
             nn.Dropout(0.25),
-#             nn.Linear(96, 32),
+#             nn.Linear(64, 16),
 #             nn.ReLU(),
 #             nn.Dropout(0.25),
 #             nn.Linear(64, 16),
@@ -173,16 +173,18 @@ def trainingC(network, trainloader, validloader, optimizer, criterion, epoch, fi
         
         train_loss.append(total_loss)
         recall = TP / (TP + FN)
+        precision = TP / (TP + FP) if FP != 0 else 0
         aging = (TP + FP) / (TP + TN + FP + FN)
+        f1 = 2*(recall*precision) / (recall + precision) if (recall + precision) != 0 else 0
             
-        print(f'Epoch {i+1}: Train Loss = {total_loss / (TP + TN + FP + FN)}, Recall = {recall}, Aging Rate = {aging}')
-        
+        print(f'Epoch {i+1}: Train Loss = {total_loss / (TP + TN + FP + FN)}, Recall = {recall}, Aging Rate = {aging}, Precision = {precision}, f1 = {f1}')
+
         if ((i+1) % 5 == 0):
-            five_loss, valid_recall, _ = testingC(network, validloader, criterion)
+            five_loss, valid_objective, _ = testingC(network, validloader, criterion)
             valid_loss.append(five_loss)
             
-            if valid_recall > best_objective:
-                best_objective = valid_recall
+            if valid_objective > best_objective:
+                best_objective = valid_objective
                 best_model = network
                 torch.save(best_model, f'{filename}_NeuralNetworkC_{epoch}.ckpt')
                 print(f'Model in epoch {i+1} is saved.\n')
@@ -283,7 +285,7 @@ def trainingR(network, trainloader, validloader, optimizer, criterion, epoch, fi
 
 # ### testing
 
-# In[68]:
+# In[7]:
 
 
 def testingC(network, dataloader, criterion):
@@ -311,10 +313,8 @@ def testingC(network, dataloader, criterion):
         
     recall = TP / (TP + FN) if (TP + FN) != 0 else 0
     aging = (TP + FP) / (TP + TN + FP + FN)
-    if (TP + FP) != 0:
-        precision = TP / (TP + FP)
-    else:
-        precision = 0
+    precision = TP / (TP + FP) if (TP + FP) != 0 else 0
+    f1 = 2*(recall*precision) / (recall+precision) if (recall + precision) != 0 else 0
     if aging != 0:
         efficiency = recall / aging
         score = score1(recall, aging)
@@ -322,11 +322,11 @@ def testingC(network, dataloader, criterion):
         efficiency = 0
         score = 0
         
-    print(f'Test Loss = {total_loss / (TP + TN + FP + FN)}, Recall = {recall}, Aging Rate = {aging}, Efficiency = {recall / (aging + 1e-8)}')
+    print(f'Test Loss = {total_loss / (TP + TN + FP + FN)}, Recall = {recall}, Aging Rate = {aging}, precision = {precision}')
     
-    valid_objective = recall - 0.5*aging
+    valid_objective = (recall+2*precision)
     table = pd.Series({'TP': TP, 'FP': FP, 'FN': FN, 'TN': TN, 'Precision': precision, 'Recall': recall, 
-                       'Aging Rate': aging, 'Efficiency': efficiency, 'Score': score})
+                       'Aging Rate': aging, 'Efficiency': efficiency, 'f1': f1, 'Score': score})
     table = pd.DataFrame(table).T
     
     return total_loss, valid_objective, table
@@ -363,7 +363,7 @@ def testingR(network, dataloader, criterion):
     TN = best_data['TN'].values[0]
     FN = best_data['FN'].values[0]
         
-    print(f'Test Loss = {total_loss}, Recall = {recall}, Aging Rate = {aging}, Efficiency = {efficiency}')
+    print(f'\nTest Loss = {total_loss}, Recall = {recall}, Aging Rate = {aging}, Efficiency = {efficiency}')
     
     valid_objective = auc
     table = pd.Series({'TP': TP, 'FP': FP, 'FN': FN, 'TN': TN, 'Precision': precision, 'Recall': recall,
@@ -378,55 +378,59 @@ def testingR(network, dataloader, criterion):
 # In[8]:
 
 
-def runall_nn(train_x, train_y, test_x, test_y, n_epoch, batch_size, model, optimizer, criterion, filename,
-              train_ratio, early_stop, mode):
+def runall_nn(train_x, train_y, test_x, test_y, n_epoch, config, filename, early_stop, mode):
     
     set_name = list(train_x.keys())
     result_table = pd.DataFrame()
     train_dict = {}
     valid_dict = {}
+    judge = list(config.keys())[0]
     for num, i in enumerate(tqdm(set_name)):
         print(f'\nStarting training Dataset {num}:')
         
+        if isinstance(config[judge], dict) :
+            best_config = config[i]
+        else :
+            best_config = config
+        
         # data preparation
-        train_ratio = train_ratio
+        train_ratio = 0.75
         train_data = RunhistSet(train_x[i], train_y[i])
         test_data = RunhistSet(test_x, test_y)
         train_size = int(len(train_data)*train_ratio)
         valid_size = len(train_data) - train_size
         train_data, valid_data = random_split(train_data, [train_size, valid_size])
+        train_loader = DataLoader(train_data, batch_size = best_config['batch_size'], shuffle = True)
+        valid_loader = DataLoader(valid_data, batch_size = best_config['batch_size'], shuffle = False)
+        test_loader = DataLoader(test_data, batch_size = best_config['batch_size'], shuffle = False)
         
-        train_loader = DataLoader(train_data, batch_size = batch_size, shuffle = True)
-        valid_loader = DataLoader(valid_data, batch_size = batch_size, shuffle = False)
-        test_loader = DataLoader(test_data, batch_size = batch_size, shuffle = False)
+        modelC = NeuralNetworkC(dim = train_x[i].shape[1]).to(device)
+        optimizerC = torch.optim.Adam(modelC.parameters(), lr = best_config['learning_rate'], 
+                                      weight_decay = best_config['weight_decay'])
+        criterionC = nn.CrossEntropyLoss(
+            weight = torch.tensor([1-best_config['bad_weight'], best_config['bad_weight']])).to(device)
         
         # training
         if mode == 'C':
-            done_model, train_loss, valid_loss = trainingC(network = model, 
+            done_model, train_loss, valid_loss = trainingC(network = modelC, 
                                                            trainloader = train_loader, 
                                                            validloader = valid_loader, 
-                                                           optimizer = optimizer, 
-                                                           criterion = criterion, 
+                                                           optimizer = optimizerC, 
+                                                           criterion = criterionC, 
                                                            epoch = n_epoch, 
                                                            filename = filename, 
                                                            early_stop = early_stop)
         elif mode == 'R':
-            done_model, train_loss, valid_loss = trainingR(network = model, 
-                                                           trainloader = train_loader, 
-                                                           validloader = valid_loader, 
-                                                           optimizer = optimizer, 
-                                                           criterion = criterion, 
-                                                           epoch = n_epoch, 
-                                                           filename = filename, 
-                                                           early_stop = early_stop)
+            pass
+        
         train_dict[i] = train_loss
         valid_dict[i] = valid_loss
         
         # testing
         if mode == 'C':
-            _, _, table = testingC(done_model, test_loader, criterion)
+            _, _, table = testingC(done_model, test_loader, criterionC)
         elif mode == 'R':
-            _, _, table = testingR(done_model, test_loader, criterion)
+            pass
         result_table = pd.concat([result_table, table], axis = 0).rename({0: f'dataset {num}'})
     loss_dict = dict(train = train_dict, valid = valid_dict)
         
@@ -452,16 +456,70 @@ def loss_plot(train_loss, valid_loss, num_row, num_col):
                 axes[row, col].set_title(f'dataset {index}')
                 axes[row, col].legend(loc = 'upper right', fancybox = True, prop = dict(size = 20))
 
+
+# ### optuna
+
+# In[9]:
+
+
+def NeuralNetwork_creator(train_data, mode, num_valid = 3, label = 'GB') :
+    
+    def objective(trial) :
+
+        param = {
+            'batch_size': trial.suggest_int('batch_size', 32, 96, step = 32),
+            'learning_rate': trial.suggest_categorical('learning_rate', [1e-2, 1e-3, 1e-4]),
+            'weight_decay': trial.suggest_categorical('weight_decay', [1e-2, 1e-3, 1e-4]),
+            'bad_weight': trial.suggest_categorical('bad_weight', [0.5, 0.6, 0.7])
+        }
+
+        result_list = []
+        for i in range(num_valid):
+            
+            train_x, train_y = label_divide(train_data, None, label, train_only = True)
+            train_set = RunhistSet(train_x, train_y)
+            train_ratio = 0.75
+            train_size = int(len(train_data)*train_ratio)
+            valid_size = len(train_data) - train_size
+            training_data, validing_data = random_split(train_set, [train_size, valid_size])
+            train_loader = DataLoader(training_data, batch_size = param['batch_size'], shuffle = True)
+            valid_loader = DataLoader(validing_data, batch_size = param['batch_size'], shuffle = False)
+
+            if mode == 'C':
+                model = NeuralNetworkC(dim = train_x.shape[1]).to(device)
+                optimizer = torch.optim.Adam(model.parameters(), lr = param['learning_rate'], 
+                                             weight_decay = param['weight_decay'])
+                criterion = nn.CrossEntropyLoss(
+                    weight = torch.tensor([1-param['bad_weight'], param['bad_weight']])).to(device)
+
+                done_modelC, train_lossC, valid_lossC = trainingC(network = model, 
+                                                                  trainloader = train_loader, 
+                                                                  validloader = train_loader, 
+                                                                  optimizer = optimizer, 
+                                                                  criterion = criterion, 
+                                                                  epoch = 100, 
+                                                                  filename = 'tamama',
+                                                                  early_stop = 10)
+                _, valid_objective, _ = testingC(done_modelC, valid_loader, criterion)
+                result_list.append(valid_objective)
+
+            elif mode == 'R':
+                pass
+
+        return np.mean(result_list)
+    
+    return objective
+
 '''
 # ## 
 
 # ### loading training & testing data
 
-# In[9]:
+# In[10]:
 
 
 ### training data ### 
-training_month = range(1, 7)
+training_month = range(2, 5)
 
 data_dict, trainset_x, trainset_y = multiple_month(training_month, num_set = 10, filename = 'dataset')
 
@@ -477,7 +535,7 @@ print('\n', 'Dimension of testing data:', run_test.shape)
 
 # ### For one dataset
 
-# In[10]:
+# In[ ]:
 
 
 ##### data preparation #####
@@ -488,8 +546,8 @@ train_size = int(len(train_data)*train_ratio)
 valid_size = len(train_data) - train_size
 train_data, valid_data = random_split(train_data, [train_size, valid_size])
 
-train_loader = DataLoader(train_data, batch_size = 64, shuffle = True)
-valid_loader = DataLoader(valid_data, batch_size = 64, shuffle = False)
+train_loader = DataLoader(train_data, batch_size = 48, shuffle = True)
+valid_loader = DataLoader(valid_data, batch_size = 48, shuffle = False)
 test_loader = DataLoader(test_data, batch_size = 64, shuffle = False)
 
 
@@ -500,11 +558,12 @@ test_loader = DataLoader(test_data, batch_size = 64, shuffle = False)
 
 ##### model preparation #####
 # hyperparameter: learning rate, weight decay, weight
-modelC = NeuralNetworkC().to(device)
+modelC = NeuralNetworkC(dim = len(train_data[0][0])).to(device)
 optimizerC = torch.optim.Adam(modelC.parameters(), lr = 0.001, weight_decay = 0.01)
 criterionC = nn.CrossEntropyLoss(weight = torch.tensor([0.5, 0.5])).to(device)
 
-criterionC = LabelSmoothingLoss(classes = 2, smoothing = 0.2)
+### label smoothing ###
+#criterionC = LabelSmoothingLoss(classes = 2, smoothing = 0.2)
 
 ##### training #####
 done_modelC, train_lossC, valid_lossC = trainingC(network = modelC, 
@@ -512,7 +571,7 @@ done_modelC, train_lossC, valid_lossC = trainingC(network = modelC,
                                                   validloader = valid_loader, 
                                                   optimizer = optimizerC, 
                                                   criterion = criterionC, 
-                                                  epoch = 150, 
+                                                  epoch = 200, 
                                                   filename = 'tamama',
                                                   early_stop = 10)
 
@@ -522,13 +581,13 @@ _, _, result_tableC = testingC(done_modelC, test_loader, criterionC)
 
 # #### regressor
 
-# In[20]:
+# In[ ]:
 
 
 ##### model preparation #####
 # hyperparameter: learning rate, weight decay, weight
 modelR = NeuralNetworkR().to(device)
-optimizerR = torch.optim.Adam(modelR.parameters(), lr = 0.001, weight_decay = 0.001)
+optimizerR = torch.optim.Adam(modelR.parameters(), lr = 0.001, weight_decay = 0.01)
 criterionR = nn.MSELoss().to(device)
 
 ##### training #####
@@ -545,33 +604,40 @@ done_modelR, train_lossR, valid_lossR = trainingR(network = modelR,
 _, _, result_tableR = testingR(done_modelR, test_loader, criterionR)
 
 
+# ### search for best hyperparameter
+
+# In[11]:
+
+
+best_paramC, all_scoreC = all_optuna(num_set = 10, 
+                                     all_data = run_train, 
+                                     mode = 'C', 
+                                     TPE_multi = False, 
+                                     n_iter = 20, 
+                                     filename = 'runhist_array_m2m4_m5_3criteria_NeuralNetwork', 
+                                     creator = NeuralNetwork_creator
+                                    )
+
+
 # ### For multiple datasets
 
 # #### classifier
 
-# In[77]:
+# In[ ]:
 
-
-runall_modelC = NeuralNetworkC(dim = 133).to(device)
-runall_optimizerC = torch.optim.Adam(runall_modelC.parameters(), lr = 0.001, weight_decay = 0.01)
-runall_criterionC = nn.CrossEntropyLoss(weight = torch.tensor([0.2, 0.8])).to(device)
 
 table_setC, loss_dictC = runall_nn(train_x = run_train_x, 
                                    train_y = run_train_y, 
                                    test_x = run_test_x, 
                                    test_y = run_test_y, 
-                                   n_epoch = 150, 
-                                   batch_size = 64,
-                                   model = runall_modelC,
-                                   optimizer = runall_optimizerC, 
-                                   criterion = runall_criterionC, 
-                                   filename = 'runhist_array_m1m6_m7_3criteria_NeuralNetworkC', 
-                                   train_ratio = 0.75, 
+                                   n_epoch = 200, 
+                                   config = best_paramC,
+                                   filename = 'runhist_array_m2m4_m5_3criteria_NeuralNetworkC', 
                                    early_stop = 10,
                                    mode = 'C')
 
 
-# In[78]:
+# In[ ]:
 
 
 loss_plot(loss_dictC['train'], loss_dictC['valid'], num_row = 4, num_col = 3)
@@ -580,7 +646,7 @@ table_setC
 
 # #### regressor
 
-# In[18]:
+# In[ ]:
 
 
 runall_modelR = NeuralNetworkR().to(device)
@@ -611,10 +677,10 @@ table_setR
 
 # ### export
 
-# In[66]:
+# In[ ]:
 
 
-savedate = '20211109'
+savedate = '20211207'
 TPE_multi = False
 
 table_setC['sampler'] = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'

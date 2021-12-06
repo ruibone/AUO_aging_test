@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
+# In[1]:
 
 
 import os
@@ -18,18 +18,17 @@ from sklearn.model_selection import train_test_split
 from library.Data_Preprocessing import Balance_Ratio
 from library.Imbalance_Sampling import label_divide
 from library.Aging_Score_Contour import score1
-
 from library.AdaBoost import train_set, multiple_set, multiple_month, line_chart, cf_matrix, AUC, PR_curve,      multiple_curve, PR_matrix, best_threshold, all_optuna, optuna_history 
-'''
+
 os.chdir('C:/Users/user/Desktop/Darui_R08621110') 
 os.getcwd()
-'''
+
 
 # ## 
 
 # ### catboost
 
-# In[ ]:
+# In[2]:
 
 
 def CatBoostC(train_x, test_x, train_y, test_y, config, cat_feature):
@@ -101,7 +100,7 @@ def runall_CatBoostR(num_set, trainset_x, test_x, trainset_y, test_y, config, ca
 
 # ### optuna
 
-# In[ ]:
+# In[3]:
 
 
 def CatBoost_creator(train_data, mode, cat_feature = [], num_valid = 3, label = 'GB') :
@@ -151,9 +150,9 @@ def CatBoost_creator(train_data, mode, cat_feature = [], num_valid = 3, label = 
                 result = CatBoostC(train_x, valid_x, train_y, valid_y, param, cat_feature)
                 table = cf_matrix(result, valid_y)
                 recall = table['Recall']
-                aging = table['Aging Rate']
-                effi = table['Efficiency']
-                result_list.append(recall - 0.1*aging)
+                precision = table['Precision']
+                f1 = 2*(recall*precision) / (recall+precision)
+                result_list.append((recall+2*precision))
 
             elif mode == 'R':
                 result = CatBoostR(train_x, valid_x, train_y, valid_y, param, cat_feature)
@@ -170,11 +169,11 @@ def CatBoost_creator(train_data, mode, cat_feature = [], num_valid = 3, label = 
 
 # ### loading training & testing data
 
-# In[ ]:
+# In[4]:
 
 
 ### training data ### 
-training_month = [2, 3, 4]
+training_month = range(2, 5)
 
 data_dict, trainset_x, trainset_y = multiple_month(training_month, num_set = 10, filename = 'dataset')
 
@@ -196,9 +195,9 @@ print('\n', 'Dimension of testing data:', run_test.shape)
 best_paramC, all_scoreC = all_optuna(num_set = 10, 
                                      all_data = run_train, 
                                      mode = 'C', 
-                                     TPE_multi = False, 
-                                     n_iter = 1, 
-                                     filename = 'runhist_array_m2m5_4selection_CatBoost', 
+                                     TPE_multi = True, 
+                                     n_iter = 200, 
+                                     filename = 'runhist_array_m2m4_m5_3criteria_CatBoost', 
                                      creator = CatBoost_creator
                                     )
 
@@ -209,8 +208,8 @@ best_paramC, all_scoreC = all_optuna(num_set = 10,
 best_paramR, all_scoreR = all_optuna(num_set = 10, 
                                      all_data = run_train, 
                                      mode = 'R', 
-                                     TPE_multi = False, 
-                                     n_iter = 1,
+                                     TPE_multi = True, 
+                                     n_iter = 200,
                                      filename = 'runhist_array_m2m5_4selection_CatBoost',
                                      creator = CatBoost_creator
                                     )
@@ -220,10 +219,10 @@ best_paramR, all_scoreR = all_optuna(num_set = 10,
 
 
 ##### optimization history plot #####
-optuna_history(best_paramR, all_scoreR, num_row = 4, num_col = 3, model = 'CatBoost Regressor')
+optuna_history(best_paramC, all_scoreC, num_row = 4, num_col = 3, model = 'CatBoost Classifier')
             
 ##### best hyperparameter table #####
-param_table = pd.DataFrame(best_paramR).T
+param_table = pd.DataFrame(best_paramC).T
 param_table
 
 
@@ -250,14 +249,28 @@ table_setC
 
 
 pr_dict, table_setR = runall_CatBoostR(10, trainset_x, run_test_x, trainset_y, run_test_y, best_paramR, cat_feature = [], 
-                                       thres_target = 'Recall', threshold = 0.7)
+                                       thres_target = 'Recall', threshold = 0.8)
 line_chart(table_setR, title = 'CatBoost Regressor')
 
 
 # In[ ]:
 
 
-multiple_curve(3, 3, pr_dict, table_setR, target = 'Aging Rate')
-multiple_curve(3, 3, pr_dict, table_setR, target = 'Precision')
+multiple_curve(4, 3, pr_dict, table_setR, target = 'Aging Rate')
+multiple_curve(4, 3, pr_dict, table_setR, target = 'Precision')
 table_setR
+
+
+# ### export
+
+# In[ ]:
+
+
+savedate = '20211130'
+TPE_multi = True
+
+table_setC['sampler'] = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
+table_setC['model'] = 'CatBoost'
+with pd.ExcelWriter(f'{savedate}_Classifier.xlsx', mode = 'a') as writer:
+    table_setC.to_excel(writer, sheet_name = 'CatBoost')
 '''

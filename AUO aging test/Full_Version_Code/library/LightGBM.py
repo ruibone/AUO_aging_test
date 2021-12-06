@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
+# In[1]:
 
 
 import os
@@ -15,28 +15,29 @@ from lightgbm import LGBMClassifier, LGBMRegressor
 import optuna
 from sklearn.model_selection import train_test_split
 
-from library.Data_Preprocessing import Balance_Ratio
+from library.Data_Preprocessing import Balance_Ratio, train_col
 from library.Imbalance_Sampling import label_divide
 from library.Aging_Score_Contour import score1
 from library.AdaBoost import train_set, multiple_set, multiple_month, line_chart, cf_matrix, AUC, PR_curve,      multiple_curve, PR_matrix, best_threshold, all_optuna, optuna_history 
-'''
+
 os.chdir('C:/Users/user/Desktop/Darui_R08621110') 
 os.getcwd()
-'''
+
 
 # ## 
 
 # ### lightgbm
 
-# In[ ]:
+# In[2]:
 
 
 def LightGBMC(train_x, test_x, train_y, test_y, config):
     
     clf = LGBMClassifier(**config)
     clf.fit(train_x, train_y)
-    predict_y = clf.predict(test_x)
-    result = pd.DataFrame({'truth': test_y, 'predict': predict_y})
+    predict_y = clf.predict_proba(test_x)[:, 1]
+    define_predict = (predict_y > 0.5).astype(int)
+    result = pd.DataFrame({'truth': test_y, 'predict': define_predict})
     
     return result
 
@@ -99,7 +100,7 @@ def runall_LightGBMR(num_set, trainset_x, test_x, trainset_y, test_y, config, th
 
 # ### optuna
 
-# In[ ]:
+# In[3]:
 
 
 def LightGBM_creator(train_data, mode, num_valid = 3, label = 'GB') :
@@ -137,9 +138,9 @@ def LightGBM_creator(train_data, mode, num_valid = 3, label = 'GB') :
                 result = LightGBMC(train_x, valid_x, train_y, valid_y, param)
                 table = cf_matrix(result, valid_y)
                 recall = table['Recall']
-                aging = table['Aging Rate']
-                effi = table['Efficiency']
-                result_list.append(recall - 0.1*aging)
+                precision = table['Precision']
+                f1 = 2*(recall*precision) / (recall+precision)
+                result_list.append((recall+2*precision))
 
             elif mode == 'R':
                 result = LightGBMR(train_x, valid_x, train_y, valid_y, param)
@@ -156,11 +157,11 @@ def LightGBM_creator(train_data, mode, num_valid = 3, label = 'GB') :
 
 # ### loading training & testing data
 
-# In[ ]:
+# In[5]:
 
 
 ### training data ### 
-training_month = [2, 3, 4]
+training_month = range(2, 5)
 
 data_dict, trainset_x, trainset_y = multiple_month(training_month, num_set = 10, filename = 'dataset')
 
@@ -174,6 +175,8 @@ run_test_x, run_test_y = label_divide(run_test, None, 'GB', train_only = True)
 print('\n', 'Dimension of testing data:', run_test.shape)
 
 
+# ### search for best hyperparameter
+
 # In[ ]:
 
 
@@ -181,8 +184,8 @@ best_paramC, all_scoreC = all_optuna(num_set = 10,
                                      all_data = run_train, 
                                      mode = 'C', 
                                      TPE_multi = False, 
-                                     n_iter = 1,
-                                     filename = 'runhist_array_m4_m5_4selection_LightGBM',
+                                     n_iter = 200,
+                                     filename = 'runhist_array_m2m4_m5_3criteria_LightGBM',
                                      creator = LightGBM_creator
                                     )
 
@@ -193,9 +196,9 @@ best_paramC, all_scoreC = all_optuna(num_set = 10,
 best_paramR, all_scoreR = all_optuna(num_set = 10, 
                                      all_data = run_train, 
                                      mode = 'R', 
-                                     TPE_multi = False, 
-                                     n_iter = 1,
-                                     filename = 'runhist_array_m4_m5_4selection_LightGBM',
+                                     TPE_multi = True, 
+                                     n_iter = 200,
+                                     filename = 'runhist_array_m2m5_4selection_LightGBM',
                                      creator = LightGBM_creator
                                     )
 
@@ -244,4 +247,18 @@ line_chart(table_setR, title = 'LightGBM Regressor')
 multiple_curve(4, 3, pr_dict, table_setR, target = 'Aging Rate')
 multiple_curve(4, 3, pr_dict, table_setR, target = 'Precision')
 table_setR
+
+
+# ### export
+
+# In[ ]:
+
+
+savedate = '20211130'
+TPE_multi = False
+
+table_setC['sampler'] = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
+table_setC['model'] = 'LightGBM'
+with pd.ExcelWriter(f'{savedate}_Classifier.xlsx', mode = 'a') as writer:
+    table_setC.to_excel(writer, sheet_name = 'LightGBM')
 '''
