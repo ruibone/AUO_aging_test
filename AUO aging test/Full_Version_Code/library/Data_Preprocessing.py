@@ -418,7 +418,7 @@ def view_apriori(runhist_array, min_sup = 0.001, min_confi = 0.2, min_lift = 3):
 def Balance_Ratio(data, label = 'GB'):
     
     r = len(data[data[label] == 0]) / len(data[data[label] == 1])
-    r = np.around(r, decimals = 0)
+    r = np.around(r, decimals = 2)
     
     return r
 
