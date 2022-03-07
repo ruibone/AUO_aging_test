@@ -20,18 +20,19 @@ from sklearn.model_selection import train_test_split
 from library.Data_Preprocessing import Balance_Ratio
 from library.Imbalance_Sampling import label_divide
 from library.Aging_Score_Contour import score1
-
+'''
 os.chdir('C:/Users/user/Desktop/Darui_R08621110')  
 os.getcwd()
-
+'''
 
 # ## 
 
-# ### load multiple dataset
+# ### Load Multiple Datasets
 
-# In[3]:
+# In[4]:
 
 
+# store datasets in a dictionary by each month
 def multiple_month(month_list, num_set, filename = 'dataset'):
     
     month_dict = {}
@@ -45,6 +46,7 @@ def multiple_month(month_list, num_set, filename = 'dataset'):
     return month_dict, trainset_x, trainset_y
 
 
+# store datasets in a dictionary by each resampling dataset
 def multiple_set(num_set, filename = 'dataset'):
     
     data_dict = {}
@@ -56,6 +58,7 @@ def multiple_set(num_set, filename = 'dataset'):
     return data_dict
 
 
+# divided the data and the label, and store to two dictionaries
 def train_set(data_dict, num_set, label = 'GB'):
     
     trainset_x = {}
@@ -70,11 +73,12 @@ def train_set(data_dict, num_set, label = 'GB'):
     return trainset_x, trainset_y
 
 
-# ### for classifier
+# ### Classification Confusion Matrix
 
-# In[4]:
+# In[3]:
 
 
+# input dataframe of the prediction & ground truth, and output the confusion matrix 
 def cf_matrix(predict, train_y):
     
     # confusion matrix
@@ -93,13 +97,16 @@ def cf_matrix(predict, train_y):
     br = train_OK / train_NG
     
     #precision, recall, aging rate, efficiency, score
+    recall = TP / (TP + FN)
     num_pd = TP + FP
     if num_pd != 0:
         precision = TP / num_pd
+        f1score = (recall*precision) / (recall + precision)
     else:
         precision = 0
+        f1score = 0
     
-    recall = TP / (TP + FN)
+    
     ar = (TP + FP) / (TP + FP + FN + TN)
     if ar != 0:
         eff = recall / ar
@@ -107,14 +114,14 @@ def cf_matrix(predict, train_y):
         eff = 0
     score = score1(recall, ar)
     
-    table = pd.Series({'Balance Ratio': br, 'Train_OK': train_OK, 'Train_NG': train_NG, 'TP': TP, 'FP': FP, 'FN': FN,                        'TN': TN, 'Precision': precision, 'Recall': recall, 'Aging Rate': ar, 'Efficiency': eff,                        'Score': score})
+    table = pd.Series({'Balance Ratio': br, 'Train_OK': train_OK, 'Train_NG': train_NG, 'TP': TP, 'FP': FP, 'FN': FN,                        'TN': TN, 'Precision': precision, 'Recall': recall, 'Aging Rate': ar, 'Efficiency': eff,                        'F1 Score': f1score, 'Score': score})
     table = pd.DataFrame(table).T
     
     print('Precision:', precision, '\nRecall:', recall, '\nAging Rate:', ar)
     return  table
 
 
-# ### for regressor
+# ### Regression Precision-Recall Matrix (optional)
 
 # In[5]:
 
@@ -166,11 +173,12 @@ def best_threshold(pr_matrix, target, threshold = False):
     return best_data, best_thres
 
 
-# ### plot
+# ### Plot
 
 # In[6]:
 
 
+# plot recall, aging rate and precision of all resampling datasets in one plot
 def line_chart(table_set, title):
     
     plt.style.use('seaborn-dark-palette')
@@ -196,7 +204,8 @@ def line_chart(table_set, title):
     
     plt.show()
     
-    
+
+# calculate AUC (optional)
 def AUC(x, y):
     
     area = 0
@@ -206,13 +215,13 @@ def AUC(x, y):
     for i in range(1, len(x)):
         wide = x[i] - x[i-1]
         height = (y[i-1] + y[i])/2
-        area = area + wide*height
-        
+        area = area + wide*height   
     area = left + area + right
     
     return area
 
 
+# plot PR curve for regression results (optional)
 def PR_curve(pr_matrix, best_data, title = 'PR_curve'):
     
     plt.plot(pr_matrix['Recall'], pr_matrix['Precision'], 'b-')
@@ -227,7 +236,8 @@ def PR_curve(pr_matrix, best_data, title = 'PR_curve'):
     auc = AUC(pr_matrix['Recall'].values, pr_matrix['Precision'].values)
     print('AUC: ', auc, '\n')
     
-    
+
+# plot PR curve for all resampling datasets (optional)
 def multiple_curve(row_num, col_num, pr_dict, table_set, target = 'Aging Rate'):
     
     fig, axs = plt.subplots(row_num, col_num, sharex = False, sharey = False, figsize = (row_num*8 + 1, col_num*6))
@@ -255,11 +265,12 @@ def multiple_curve(row_num, col_num, pr_dict, table_set, target = 'Aging Rate'):
                     axs[row, col].set_title(f'dataset {index}, AUC = {auc}, Aging Rate = {ar}, Recall = {recall}')
 
 
-# ### adaboost 
+# ### Adaboost 
 
-# In[7]:
+# In[28]:
 
 
+# classifier
 def AdaBoostC(train_x, test_x, train_y, test_y, config):
     
     clf = AdaBoostClassifier(**config)
@@ -270,6 +281,7 @@ def AdaBoostC(train_x, test_x, train_y, test_y, config):
     return result
 
 
+# regressor
 def AdaBoostR(train_x, test_x, train_y, test_y, config) :
     
     reg = AdaBoostRegressor(**config)
@@ -280,17 +292,18 @@ def AdaBoostR(train_x, test_x, train_y, test_y, config) :
     return result
 
 
-def runall_AdaBoostC(num_set, trainset_x, test_x, trainset_y, test_y, config):
+# classifier for all resampling datasets
+def runall_AdaBoostC(trainset_x, test_x, trainset_y, test_y, config):
     
     table_set = pd.DataFrame()
     bad_set = pd.DataFrame()
-    judge = list(config.keys())[0]
-
-    for i in tqdm(range(num_set)):
-        print('\n', f'Dataset {i}:')
-        
+    set_index = list(config.keys())
+    judge = set_index[0]
+    
+    for i, j in tqdm(enumerate(set_index)):
+        print('\n', f'Data{j}:')
         if isinstance(config[judge], dict) :
-            best_config = config[f'set{i}']
+            best_config = config[j]
         else :
             best_config = config
             
@@ -299,13 +312,14 @@ def runall_AdaBoostC(num_set, trainset_x, test_x, trainset_y, test_y, config):
         boost_param = dict((key, best_config[key]) for key in ['learning_rate', 'n_estimators'] if key in best_config)
         boost_param.update(tree_param)
 
-        result = AdaBoostC(trainset_x[f'set{i}'], test_x, trainset_y[f'set{i}'], test_y, boost_param)
-        table = cf_matrix(result, trainset_y[f'set{i}'])
-        table_set = pd.concat([table_set, table]).rename(index = {0: f'dataset {i}'})
+        result = AdaBoostC(trainset_x[j], test_x, trainset_y[j], test_y, boost_param)
+        table = cf_matrix(result, trainset_y[j])
+        table_set = pd.concat([table_set, table]).rename(index = {0: f'data{j}'})
     
     return table_set
 
 
+# regressor for all resampling datasets (optional)
 def runall_AdaBoostR(num_set, trainset_x, test_x, trainset_y, test_y, config, thres_target = 'Recall', threshold = False):
     
     table_set = pd.DataFrame()
@@ -336,11 +350,12 @@ def runall_AdaBoostR(num_set, trainset_x, test_x, trainset_y, test_y, config, th
     return pr_dict, table_set
 
 
-# ### optuna
+# ### Optuna
 
-# In[8]:
+# In[54]:
 
 
+# creator of optuna study for adaboost
 def AdaBoost_creator(train_data, mode, num_valid = 3):
     
     def objective(trial) :
@@ -350,15 +365,14 @@ def AdaBoost_creator(train_data, mode, num_valid = 3):
         }
         
         param = {
-            'n_estimators': trial.suggest_int('n_estimators', 100, 300, step = 50),
-            'learning_rate': trial.suggest_float('learning_rate', 0.025, 0.825, step = 0.05),
+            'n_estimators': trial.suggest_int('n_estimators', 100, 500, step = 200),
+            'learning_rate': trial.suggest_float('learning_rate', 0.025, 0.725, step = 0.05),
         }
         if mode == 'C':
             base = {'base_estimator': DecisionTreeClassifier(**tree_param)}
         elif mode == 'R':
             base = {'base_estimator': DecisionTreeRegressor(**tree_param)}
         param.update(base)
-
 
         result_list = []
         for i in range(num_valid):
@@ -371,8 +385,12 @@ def AdaBoost_creator(train_data, mode, num_valid = 3):
                 table = cf_matrix(result, valid_y)
                 recall = table['Recall']
                 precision = table['Precision']
-                f1 = (recall*precision) / (recall+precision)
-                result_list.append(f1)
+                beta = 1
+                if recall.values > 0:
+                    fscore = ((1+beta**2)*recall*precision) / (recall+(beta**2)*precision)
+                else:
+                    fscore = 0
+                result_list.append(fscore)
                 
             elif mode == 'R':
                 result = AdaBoostR(train_x, valid_x, train_y, valid_y, param)
@@ -385,17 +403,21 @@ def AdaBoost_creator(train_data, mode, num_valid = 3):
     return objective
 
 
-def all_optuna(num_set, all_data, mode, TPE_multi, n_iter, filename, creator, num_valid = 3, return_addition = True):
+# input a optuna study of specific classifier/regressor and run SMBO for all resampling datsets 
+def all_optuna(all_data, mode, TPE_multi, n_iter, filename, creator, num_valid = 3, return_addition = True, 
+              include_origin = False):
 
     best_param = {}
     all_score = {}
-    for i in tqdm(range(num_set)) :
+    start_index = 0 if include_origin else 1
+    num_set = len(all_data.keys())
+    for i in tqdm(range(start_index, num_set)) :
         
         ##### define objective function and change optimized target dataset in each loop #####
         objective = creator(train_data = all_data[f'set{i}'], mode = mode, num_valid = num_valid)
         
         ##### optimize one dataset in each loop #####
-        print(f'Dataset{i} :')
+        print(f'Dataset {i} :')
         
         study = optuna.create_study(sampler = optuna.samplers.TPESampler(multivariate = TPE_multi), 
                                        direction = 'maximize')
@@ -404,11 +426,9 @@ def all_optuna(num_set, all_data, mode, TPE_multi, n_iter, filename, creator, nu
         best_param[f'set{i}'] = study.best_trial.params
         
         ##### return score and entire params for score plot or feature importance
-        if return_addition :
-            collect_score = []
-            [collect_score.append(x.values) for x in study.trials]
-            all_score[f'set{i}'] = collect_score 
-        
+        collect_score = []
+        [collect_score.append(x.values) for x in study.trials]
+        all_score[f'set{i}'] = collect_score       
         print(f"Sampler is {study.sampler.__class__.__name__}")
     
     ##### store the best hyperparameters #####
@@ -416,21 +436,19 @@ def all_optuna(num_set, all_data, mode, TPE_multi, n_iter, filename, creator, nu
     with open(f'{filename}{mode}_{multi_mode}_{n_iter}.data', 'wb') as f:
         pickle.dump(best_param, f)
     
-    if return_addition :
-        return best_param, all_score
-    else :
-        return best_param
+    return best_param, all_score
     
 
+# plot SMBO optimization history of all resampling datasets
 def optuna_history(best_param, all_score, num_row, num_col, model):
 
     fig, axs = plt.subplots(num_row, num_col, figsize = (num_row*10, num_col*5))
     plt.suptitle(f'Optimization History of {model}', y = 0.94, fontsize = 25)    
     for row in range(num_row):
         for col in range(num_col):
-            index = num_col*row + col
+            index = num_col*row + col + 1
             
-            if index < len(best_param) :
+            if index <= len(best_param):
                 axs[row, col].plot(range(len(all_score[f'set{index}'])), all_score[f'set{index}'], 'r-', linewidth = 1)
                 axs[row, col].set_title(f'Dataset {index}')
                 axs[row, col].set_xlabel('Iterations')
@@ -439,9 +457,9 @@ def optuna_history(best_param, all_score, num_row, num_col, model):
 '''
 # ## 
 
-# ### loading training & testing data
+# ### Load Data
 
-# In[9]:
+# In[13]:
 
 
 ### training data ### 
@@ -459,20 +477,49 @@ run_test_x, run_test_y = label_divide(run_test, None, 'GB', train_only = True)
 print('\n', 'Dimension of testing data:', run_test.shape)
 
 
-# ### search for best hyperparameter
+# ### Search for Best Hyperparameters
 
-# In[10]:
+# In[55]:
 
 
-best_paramC, all_scoreC = all_optuna(num_set = 10, 
-                                     all_data = run_train, 
+best_paramC, all_scoreC = all_optuna(all_data = run_train, 
                                      mode = 'C', 
                                      TPE_multi = False, 
-                                     n_iter = 25, 
-                                     filename = 'runhist_array_m2m5_4selection_AdaBoost',
+                                     n_iter = 10, 
+                                     filename = 'runhist_array_m2m4_m5_3criteria_AdaBoost',
                                      creator = AdaBoost_creator
                                     )
 
+
+# In[56]:
+
+
+##### optimization history plot #####
+optuna_history(best_paramC, all_scoreC, num_row = 3, num_col = 3, model = 'AdaBoost Classifier')
+            
+##### best hyperparameter table #####
+param_table = pd.DataFrame(best_paramC).T
+param_table
+
+
+# ## 
+
+# ### Classifier
+
+# In[57]:
+
+
+table_setC = runall_AdaBoostC(run_train_x, run_test_x, run_train_y, run_test_y, best_paramC)
+line_chart(table_setC, title = 'AdaBoost Classifier')
+
+
+# In[58]:
+
+
+table_setC
+
+
+# ### Regressor (optional)
 
 # In[ ]:
 
@@ -490,55 +537,6 @@ best_paramR, all_scoreR = all_optuna(num_set = 10,
 # In[ ]:
 
 
-##### optimization history plot #####
-optuna_history(best_paramC, all_scoreC, num_row = 4, num_col = 3, model = 'AdaBoost Classifier')
-            
-##### best hyperparameter table #####
-param_table = pd.DataFrame(best_paramC).T
-param_table
-
-
-# In[ ]:
-
-
-##### constructing ......... #####
-study = optuna.create_study(sampler = optuna.samplers.TPESampler(multivariate = False), direction = 'maximize') 
-#TPE, Random, Grid, CmaEs#
-objective = objective_creator(train_data = data_dict['set6'], mode = 'C', num_valid = 3)
-study.optimize(objective, n_trials = 5, show_progress_bar = True, gc_after_trial = True)
-
-
-##### hyperparameter importance #####
-#importances = optuna.importance.get_param_importances(study)
-#importances.optuna.importance.get_param_importances(study, evaluator = optuna.importance.FanovaImportanceEvaluator())
-importance_fig = optuna.visualization.plot_param_importances(study)
-slice_fig = optuna.visualization.plot_slice(study)
-importance_fig.show()
-slice_fig.show()
-
-
-# ## 
-
-# ### classifier
-
-# In[11]:
-
-
-table_setC = runall_AdaBoostC(10, run_train_x, run_test_x, run_train_y, run_test_y, best_paramC)
-line_chart(table_setC, title = 'AdaBoost Classifier')
-
-
-# In[ ]:
-
-
-table_setC
-
-
-# ### regressor
-
-# In[ ]:
-
-
 pr_dict, table_setR = runall_AdaBoostR(10, run_train_x, run_test_x, run_train_y, run_test_y, best_paramR,
                                       thres_target = 'Recall', threshold = 0.7)
 line_chart(table_setR, title = 'AdaBoost Regressor')
@@ -552,12 +550,12 @@ multiple_curve(4, 3, pr_dict, table_setR, target = 'Precision')
 table_setR
 
 
-# ### export
+# ### Export
 
-# In[ ]:
+# In[35]:
 
 
-savedate = '20211019'
+savedate = '20220308'
 TPE_multi = False
 
 table_setC['sampler'] = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
