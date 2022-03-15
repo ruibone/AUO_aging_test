@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
+# In[1]:
 
 
 import os
@@ -19,28 +19,31 @@ from library.Data_Preprocessing import Balance_Ratio
 from library.Imbalance_Sampling import label_divide
 from library.Aging_Score_Contour import score1
 from library.AdaBoost import train_set, multiple_set, multiple_month, line_chart, cf_matrix, AUC, PR_curve,      multiple_curve, PR_matrix, best_threshold, all_optuna, optuna_history 
-
+'''
 os.chdir('C:/Users/user/Desktop/Darui_R08621110') 
 os.getcwd()
-
+'''
 
 # ## 
 
-# ### xgboost
+# ### XGBoost
 
-# In[ ]:
+# In[2]:
 
 
+# classifier
 def XGBoostC(train_x, test_x, train_y, test_y, config):
     
     clf = xgb.XGBClassifier(**config, n_jobs = -1, use_label_encoder = False)
     clf.fit(train_x, train_y)
-    predict_y = clf.predict(test_x)
-    result = pd.DataFrame({'truth': test_y, 'predict': predict_y})
+    predict_y = clf.predict_proba(test_x)[:, 1]
+    define_predict = (predict_y > 0.5).astype(int)
+    result = pd.DataFrame({'truth': test_y, 'predict': define_predict})
     
     return result
     
-    
+
+# regressor
 def XGBoostR(train_x, test_x, train_y, test_y, config):
     
     reg = xgb.XGBRegressor(**config, n_jobs = -1)
@@ -51,27 +54,29 @@ def XGBoostR(train_x, test_x, train_y, test_y, config):
     return result
 
 
-def runall_XGBoostC(num_set, trainset_x, test_x, trainset_y, test_y, config):
+# classifier for all resampling datasets
+def runall_XGBoostC(trainset_x, test_x, trainset_y, test_y, config):
     
     table_set = pd.DataFrame()
     bad_set = pd.DataFrame()
-    judge = list(config.keys())[0]
+    set_index = list(config.keys())
+    judge = set_index[0]
 
-    for i in range(num_set):
-        print('\n', f'Dataset {i}:')
-
+    for i, j in tqdm(enumerate(set_index)):
+        print('\n', f'Data{j}:')
         if isinstance(config[judge], dict) :
-            best_config = config[f'set{i}']
+            best_config = config[j]
         else :
             best_config = config
             
-        result = XGBoostC(trainset_x[f'set{i}'], test_x, trainset_y[f'set{i}'], test_y, best_config)    
-        table = cf_matrix(result, trainset_y[f'set{i}'])
-        table_set = pd.concat([table_set, table]).rename(index = {0: f'dataset {i}'})
+        result = XGBoostC(trainset_x[j], test_x, trainset_y[j], test_y, best_config)    
+        table = cf_matrix(result, trainset_y[j])
+        table_set = pd.concat([table_set, table]).rename(index = {0: f'data{j}'})
 
     return table_set
     
-    
+
+# regressor for all resampling datasets
 def runall_XGBoostR(num_set, trainset_x, test_x, trainset_y, test_y, config, thres_target = 'Recall', threshold = 0.8):
     
     table_set = pd.DataFrame()
@@ -97,24 +102,26 @@ def runall_XGBoostR(num_set, trainset_x, test_x, trainset_y, test_y, config, thr
     return pr_dict, table_set
 
 
-# ### optuna
+# ### Optuna
 
-# In[ ]:
+# In[3]:
 
 
-def XGBoost_creator(train_data, mode, num_valid = 3, label = 'GB') :
+# creator of optuna study for XGBoost
+def XGBoost_creator(train_data, mode, num_valid = 5, label = 'GB') :
     
     def objective(trial) :
 
         param = {
             'eval_metric': trial.suggest_categorical('eval_metric', ['logloss']),
-            'n_estimators': trial.suggest_int('n_estimators', 100, 300, step = 50),
-            'subsample': trial.suggest_float('subsample', 0.5, 0.9, step = 0.2),
-            'min_child_weight': trial.suggest_int('min_child_weight', 3, 24, step = 3),
-            'max_depth': trial.suggest_int('max_depth', 3, 13, step = 2),
-            'learning_rate': trial.suggest_float('learning_rate', 0.025, 0.425, step = 0.05),
-            'reg_alpha': trial.suggest_loguniform('reg_alpha', 1e-4, 2), # alpha
-            'reg_lambda': trial.suggest_loguniform('reg_lambda', 1e-4, 2) # lambda
+            'n_estimators': trial.suggest_categorical('n_estimators', [100, 300, 500, 1000]),
+            'subsample': trial.suggest_float('subsample', 0.3, 0.9, step = 0.2),
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.3, 0.9, step = 0.2),
+            'min_child_weight': trial.suggest_int('min_child_weight', 1, 11, step = 2),
+            'max_depth': trial.suggest_int('max_depth', 3, 18, step = 3),
+            'learning_rate': trial.suggest_float('learning_rate', 0.025, 0.325, step = 0.05),
+            'reg_alpha': trial.suggest_loguniform('reg_alpha', 1e-2, 10), # alpha
+            'reg_lambda': trial.suggest_loguniform('reg_lambda', 1e-2, 10) # lambda
         }
 
         result_list = []
@@ -136,8 +143,12 @@ def XGBoost_creator(train_data, mode, num_valid = 3, label = 'GB') :
                 table = cf_matrix(result, valid_y)
                 recall = table['Recall']
                 precision = table['Precision']
-                f1 = 2*(recall*precision) / (recall+precision)
-                result_list.append((recall+2*precision))
+                beta = 1
+                if recall.values > 0:
+                    fscore = ((1+beta**2)*recall*precision) / (recall+(beta**2)*precision)
+                else:
+                    fscore = 0
+                result_list.append(fscore)
 
             elif mode == 'R':
                 result = XGBoostR(train_x, valid_x, train_y, valid_y, param)
@@ -149,13 +160,13 @@ def XGBoost_creator(train_data, mode, num_valid = 3, label = 'GB') :
     
     return objective
 
-'''
+
 # ## 
 
-# ### loading training & testing data
+# ### Load Data
 
-# In[ ]:
-
+# In[4]:
+'''
 
 ### training data ### 
 training_month = range(2, 5)
@@ -172,20 +183,49 @@ run_test_x, run_test_y = label_divide(run_test, None, 'GB', train_only = True)
 print('\n', 'Dimension of testing data:', run_test.shape)
 
 
-# ### search for best hyperparameter
+# ### Search for Best Hyperparameters
 
-# In[ ]:
+# In[33]:
 
 
-best_paramC, all_scoreC = all_optuna(num_set = 10, 
-                                     all_data = run_train, 
+best_paramC, all_scoreC = all_optuna(all_data = run_train, 
                                      mode = 'C', 
-                                     TPE_multi = True, 
-                                     n_iter = 200, 
-                                     filename = 'runhist_array_m2m4_m5_3criteria_XGBoost', 
+                                     TPE_multi = False, 
+                                     n_iter = 100, 
+                                     filename = 'runhist_array_m2m4_m5_3criteria_XGBoost_6',
                                      creator = XGBoost_creator
                                     )
 
+
+# In[34]:
+
+
+##### optimization history plot #####
+optuna_history(best_paramC, all_scoreC, num_row = 3, num_col = 3, model = 'XGBoost Classifier')
+            
+##### best hyperparameter table #####
+param_table = pd.DataFrame(best_paramC).T
+param_table
+
+
+# ## 
+
+# ### Classifier
+
+# In[35]:
+
+
+table_setC = runall_XGBoostC(run_train_x, run_test_x, run_train_y, run_test_y, best_paramC)
+line_chart(table_setC, title = 'XGBoost Classfifer')
+
+
+# In[36]:
+
+
+table_setC
+
+
+# ### Regression (optional)
 
 # In[ ]:
 
@@ -199,38 +239,6 @@ best_paramR, all_scoreR = all_optuna(num_set = 10,
                                      creator = XGBoost_creator
                                     )
 
-
-# ### optimization history & hyperparameter importance
-
-# In[ ]:
-
-
-##### optimization history plot #####
-optuna_history(best_paramC, all_scoreC, num_row = 4, num_col = 3, model = 'XGBoost Classifier')
-            
-##### best hyperparameter table #####
-param_table = pd.DataFrame(best_paramC).T
-param_table
-
-
-# ## 
-
-# ### Classifier
-
-# In[ ]:
-
-
-table_setC = runall_XGBoostC(10, run_train_x, run_test_x, run_train_y, run_test_y, best_paramC)
-line_chart(table_setC, title = 'XGBoost Classfifer')
-
-
-# In[ ]:
-
-
-table_setC
-
-
-# ### Regression
 
 # In[ ]:
 
@@ -248,16 +256,16 @@ multiple_curve(4, 3, pr_dict, table_setR, target = 'Precision')
 table_setR
 
 
-# ### export
+# ### Export
 
-# In[ ]:
+# In[37]:
 
 
-savedate = '20211130'
-TPE_multi = True
+savedate = '20220308'
+TPE_multi = False
 
 table_setC['sampler'] = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
-table_setC['model'] = 'XGBoost'
+table_setC['model'] = 'XGBoost_6'
 with pd.ExcelWriter(f'{savedate}_Classifier.xlsx', mode = 'a') as writer:
-    table_setC.to_excel(writer, sheet_name = 'XGBoost')
+    table_setC.to_excel(writer, sheet_name = 'XGBoost_6')
 '''

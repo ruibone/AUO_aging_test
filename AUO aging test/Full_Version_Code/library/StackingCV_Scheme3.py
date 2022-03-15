@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[29]:
+# In[142]:
 
 
 import os
@@ -19,6 +19,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.inspection import permutation_importance
 import shap
 from catboost import CatBoostClassifier, CatBoostRegressor
+import lightgbm
 from lightgbm import LGBMClassifier, LGBMRegressor
 from xgboost import XGBClassifier, XGBRegressor
 import torch
@@ -33,31 +34,32 @@ from library.AdaBoost import train_set, multiple_set, multiple_month, line_chart
 from library.XGBoost import XGBoost_creator
 from library.LightGBM import LightGBM_creator
 from library.CatBoost import CatBoost_creator
-from library.Random_Forest import RandomForest_creator
-from library.Extra_Trees import ExtraTrees_creator
-from library.Neural_Network import RunhistSet, NeuralNetworkC, trainingC, NeuralNetwork_creator
-
+from library.RandomForest import RandomForest_creator
+from library.ExtraTrees import ExtraTrees_creator
+from library.NeuralNetwork import RunhistSet, NeuralNetworkC, trainingC, NeuralNetwork_creator
+'''
 os.chdir('C:/Users/user/Desktop/Darui_R08621110')  
 os.getcwd()
-
+'''
 
 # ## 
 
-# ### optimize base learner
+# ### Optimize Base Learners
 
-# In[2]:
+# In[114]:
 
 
-def month_param(num_set, date, month_list, model_list, iter_list, filename, mode, TPE_multi):
+# load hyperparameters of base learners finished by scheme 2 (for training data transformation)
+def month_param(date, month_list, model_list, iter_dict, filename, mode, TPE_multi):
     
     sampler = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
     month_dict = {}
     for month in month_list:
         
         model_dict = {}
-        for i, model in enumerate(model_list):
+        for model in model_list:
                 
-            with open(f'hyperparameter/{date}/{filename}_m{month}_{model}{mode}_{sampler}_{iter_list[i]}.data', 'rb') as f:
+            with open(f'hyperparameter/{date}/{filename}_m{month}_{model}{mode}_{sampler}_{iter_dict[model]}.data', 'rb') as f:
                 model_param = pickle.load(f)
             model_dict[model] = model_param
         
@@ -66,113 +68,68 @@ def month_param(num_set, date, month_list, model_list, iter_list, filename, mode
     return month_dict
 
 
-def all_param(num_set, date, model_list, iter_list, filename, mode, TPE_multi):
+# load hyperparameters of base learners finished by scheme 1 (for testing data transformation)
+def all_param(date, model_list, iter_dict, filename, mode, TPE_multi):
     
     sampler = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
     model_dict = {}
-    for i, model in enumerate(model_list):
+    for model in model_list:
 
-        with open(f'hyperparameter/{date}/{filename}_{model}{mode}_{sampler}_{iter_list[i]}.data', 'rb') as f:
-                set_dict = pickle.load(f)
-                
+        with open(f'hyperparameter/{date}/{filename}_{model}{mode}_{sampler}_{iter_dict[model]}.data', 'rb') as f:
+                set_dict = pickle.load(f)           
         model_dict[model] = set_dict
+    
+    done_dict = dict(all = model_dict)
         
-    return model_dict
+    return done_dict
 
 
-def optimize_base(num_set, train_data, mode, TPE_multi, base_list, iter_list, filename):
+# search for the best hyperparameters of base learners
+def optimize_base(train_data, mode, TPE_multi, base_list, iter_dict, filename):
     
     best_param = {}
     month_list = list(train_data.keys())
+    available_model = ['AdaBoost', 'XGBoost', 'LightGBM', 'CatBoost', 'RandomForest', 'ExtraTrees', 'NeuralNetwork']
     
     for i in tqdm(month_list):
         
         best_param[f'{i}'] = {}
-        if 'NeuralNetwork' in base_list:
-            print('\nStarting for NeuralNetwork:\n')
-            model_index = base_list.index('NeuralNetwork')
-            best_param[f'{i}'][f'NeuralNetwork'], _ = all_optuna(num_set = num_set, 
-                                                                 all_data = train_data[f'{i}'], 
-                                                                 mode = mode, 
-                                                                 TPE_multi = TPE_multi, 
-                                                                 n_iter = iter_list[model_index],
-                                                                 filename = f'{filename}_{i}_NeuralNetwork',
-                                                                 creator = NeuralNetwork_creator)
-        
-        if 'XGBoost' in base_list:
-            print('\nStarting for XGBoost:\n')
-            model_index = base_list.index('XGBoost')
-            best_param[f'{i}'][f'XGBoost'], _ = all_optuna(num_set = num_set, 
-                                                           all_data = train_data[f'{i}'], 
-                                                           mode = mode, 
-                                                           TPE_multi = TPE_multi, 
-                                                           n_iter = iter_list[model_index],
-                                                           filename = f'{filename}_{i}_XGBoost',
-                                                           creator = XGBoost_creator)
-
-        if 'LightGBM' in base_list:
-            print('\nStarting for LightGBM:\n')
-            model_index = base_list.index('LightGBM')
-            best_param[f'{i}'][f'LightGBM'], _ = all_optuna(num_set = num_set, 
-                                                            all_data = train_data[f'{i}'], 
-                                                            mode = mode, 
-                                                            TPE_multi = TPE_multi, 
-                                                            n_iter = iter_list[model_index],
-                                                            filename = f'{filename}_{i}_LightGBM',
-                                                            creator = LightGBM_creator)
-        
-        if 'AdaBoost' in base_list:
-            print('\nStarting for AdaBoost:\n')
-            model_index = base_list.index('AdaBoost')
-            best_param[f'{i}'][f'AdaBoost'], _ = all_optuna(num_set = num_set, 
-                                                            all_data = train_data[f'{i}'], 
-                                                            mode = mode, 
-                                                            TPE_multi = TPE_multi, 
-                                                            n_iter = iter_list[model_index],
-                                                            filename = f'{filename}_{i}_AdaBoost',
-                                                            creator = AdaBoost_creator)
+        for model in base_list:
             
-        if 'CatBoost' in base_list:
-            print('\nStarting for CatBoost:\n')
-            model_index = base_list.index('CatBoost')
-            best_param[f'{i}'][f'CatBoost'], _ = all_optuna(num_set = num_set, 
-                                                            all_data = train_data[f'{i}'], 
-                                                            mode = mode, 
-                                                            TPE_multi = TPE_multi, 
-                                                            n_iter = iter_list[model_index],
-                                                            filename = f'{filename}_{i}_CatBoost',
-                                                            creator = CatBoost_creator)
-            
-        if 'RandomForest' in base_list:
-            print('\nStarting for RandomForest:\n')
-            model_index = base_list.index('RandomForest')
-            best_param[f'{i}'][f'RandomForest'], _ = all_optuna(num_set = num_set, 
-                                                                all_data = train_data[f'{i}'], 
-                                                                mode = mode, 
-                                                                TPE_multi = TPE_multi, 
-                                                                n_iter = iter_list[model_index],
-                                                                filename = f'{filename}_{i}_RandomForest',
-                                                                creator = RandomForest_creator)
-
-        if 'ExtraTrees' in base_list:
-            print('\nStarting for ExtraTrees:\n')
-            model_index = base_list.index('ExtraTrees')
-            best_param[f'{i}'][f'ExtraTrees'], _ = all_optuna(num_set = num_set, 
-                                                              all_data = train_data[f'{i}'], 
-                                                              mode = mode, 
-                                                              TPE_multi = TPE_multi, 
-                                                              n_iter = iter_list[model_index],
-                                                              filename = f'{filename}_{i}_ExtraTrees',
-                                                              creator = ExtraTrees_creator)
+            if model not in available_model:
+                raise('Invalid Model !')
+            elif model == available_model[0]:
+                creator = AdaBoost_creator
+            elif model == available_model[1]:
+                creator = XGBoost_creator
+            elif model == available_model[2]:
+                creator = LightGBM_creator
+            elif model == available_model[3]:
+                creator = CatBoost_creator
+            elif model == available_model[4]:
+                creator = RandomForest_creator
+            elif model == available_model[5]:
+                creator = ExtraTrees_creator
+            elif model == available_model[6]:
+                creator = NeuralNetwork_creator
+            print(f'\nStarting for {model}:\n')
+        
+            best_param[f'{i}'][model], _ = all_optuna(all_data = train_data[f'{i}'], 
+                                                      mode = mode, 
+                                                      TPE_multi = TPE_multi, 
+                                                      n_iter = iter_dict[model],
+                                                      filename = f'{filename}_{i}_{model}',
+                                                      creator = creator)
             
     return best_param
 
 
-# ### transform data by base learner
+# ### Transform Data by Base Learners
 
-# In[3]:
+# In[117]:
 
 
+# concept of strtified cross-validation
 def stratified_data(train_data, cv):
     
     good = train_data[train_data.GB == 0]
@@ -206,19 +163,20 @@ def stratified_data(train_data, cv):
     return train_x_dict, train_y_dict, valid_x_dict, valid_y_dict
 
 
-def transform_train(train_data, num_set, mode, base_param, cv):
+# input training data to the base learners and output the outcome
+def transform_train(train_data, mode, base_param, cv):
     
     month_list = list(base_param.keys())
     model_list = list(base_param[month_list[0]].keys())
+    set_list = list(base_param[month_list[0]][model_list[0]].keys())
     set_dict = {}
-    for x in range(num_set):
-        set_dict[f'set{x}'] = pd.DataFrame()
+    for x in set_list:
+        set_dict[x] = pd.DataFrame()
         
     for month in tqdm(month_list):
-        
-        for i in tqdm(range(num_set)):
+        for i in tqdm(set_list):
             
-            train_x_dict, train_y_dict, valid_x_dict, valid_y_dict = stratified_data(train_data[month][f'set{i}'], cv = cv)
+            train_x_dict, train_y_dict, valid_x_dict, valid_y_dict = stratified_data(train_data[month][i], cv = cv)
             all_cv = pd.DataFrame()
             for j in range(cv):
                 
@@ -229,18 +187,18 @@ def transform_train(train_data, num_set, mode, base_param, cv):
                         temp_train = RunhistSet(train_x_dict[j], train_y_dict[j])
                         temp_valid = RunhistSet(valid_x_dict[j], valid_y_dict[j])
                         train_loader = DataLoader(temp_train, 
-                                                  batch_size = base_param[month]['NeuralNetwork'][f'set{i}']['batch_size'], 
+                                                  batch_size = base_param[month]['NeuralNetwork'][i]['batch_size'], 
                                                   shuffle = True)
                         valid_loader = DataLoader(temp_valid, batch_size = len(valid_x_dict[j]), shuffle = False)
                         nn_model = NeuralNetworkC(dim = train_x_dict[j].shape[1])
                         optimizer = torch.optim.Adam(nn_model.parameters(), 
-                                                     lr = base_param[month]['NeuralNetwork'][f'set{i}']['learning_rate'], 
-                                                     weight_decay = base_param[month]['NeuralNetwork'][f'set{i}']['weight_decay'])
+                                                     lr = base_param[month]['NeuralNetwork'][i]['learning_rate'], 
+                                                     weight_decay = base_param[month]['NeuralNetwork'][i]['weight_decay'])
                         criterion = nn.CrossEntropyLoss(
-                            weight = torch.tensor([1-base_param[month]['NeuralNetwork'][f'set{i}']['bad_weight'], 
-                                                   base_param[month]['NeuralNetwork'][f'set{i}']['bad_weight']])).to('cpu')
+                            weight = torch.tensor([1-base_param[month]['NeuralNetwork'][i]['bad_weight'], 
+                                                   base_param[month]['NeuralNetwork'][i]['bad_weight']])).to('cpu')
                         network, _, _ = trainingC(nn_model, train_loader, train_loader, optimizer, criterion, epoch = 100, 
-                                                  filename = 'none', early_stop = 10)
+                                                  early_stop = 10)
                         for x, y in valid_loader:
                             output = network(x)
                             _, predict_y = torch.max(output.data, 1)
@@ -248,21 +206,21 @@ def transform_train(train_data, num_set, mode, base_param, cv):
                         model_predict = pd.concat([model_predict, predict], axis = 1)
 
                     if 'XGBoost' in model_list:                     
-                        clf = XGBClassifier(**base_param[month]['XGBoost'][f'set{i}'], n_jobs = -1)
+                        clf = XGBClassifier(**base_param[month]['XGBoost'][i], use_label_encoder = False, n_jobs = -1)
                         clf.fit(train_x_dict[j], train_y_dict[j])
                         predict_y = clf.predict_proba(valid_x_dict[j])
                         predict = pd.DataFrame({'X': predict_y[:, 0]})
                         model_predict = pd.concat([model_predict, predict], axis = 1)
 
                     if 'LightGBM' in model_list:                        
-                        clf = LGBMClassifier(**base_param[month]['LightGBM'][f'set{i}'])
+                        clf = LGBMClassifier(**base_param[month]['LightGBM'][i])
                         clf.fit(train_x_dict[j], train_y_dict[j])
                         predict_y = clf.predict_proba(valid_x_dict[j])
                         predict = pd.DataFrame({'L': predict_y[:, 0]})
                         model_predict = pd.concat([model_predict, predict], axis = 1)
                         
                     if 'CatBoost' in model_list:
-                        clf = CatBoostClassifier(**base_param[month]['CatBoost'][f'set{i}'])
+                        clf = CatBoostClassifier(**base_param[month]['CatBoost'][i])
                         clf.fit(train_x_dict[j], train_y_dict[j])
                         predict_y = clf.predict_proba(valid_x_dict[j])
                         predict = pd.DataFrame({'C': predict_y[:, 0]})
@@ -271,10 +229,10 @@ def transform_train(train_data, num_set, mode, base_param, cv):
                     if 'AdaBoost' in model_list:
                         tree_param = {
                             'base_estimator': DecisionTreeClassifier(
-                                max_depth = base_param[month]['AdaBoost'][f'set{i}']['max_depth']
+                                max_depth = base_param[month]['AdaBoost'][i]['max_depth']
                             )}
                         boost_param = dict(
-                            (key, base_param[month]['AdaBoost'][f'set{i}'][key]) for key in ['learning_rate', 'n_estimators']
+                            (key, base_param[month]['AdaBoost'][i][key]) for key in ['learning_rate', 'n_estimators']
                         )
                         boost_param.update(tree_param)
                         clf = AdaBoostClassifier(**boost_param)
@@ -284,14 +242,14 @@ def transform_train(train_data, num_set, mode, base_param, cv):
                         model_predict = pd.concat([model_predict, predict], axis = 1)
                         
                     if 'RandomForest' in model_list:
-                        clf = RandomForestClassifier(**base_param[month]['RandomForest'][f'set{i}'])
+                        clf = RandomForestClassifier(**base_param[month]['RandomForest'][i])
                         clf.fit(train_x_dict[j], train_y_dict[j])
                         predict_y = clf.predict_proba(valid_x_dict[j])
                         predict = pd.DataFrame({'R': predict_y[:, 0]})
                         model_predict = pd.concat([model_predict, predict], axis = 1)
                         
                     if 'ExtraTrees' in model_list:
-                        clf = ExtraTreesClassifier(**base_param[month]['ExtraTrees'][f'set{i}'])
+                        clf = ExtraTreesClassifier(**base_param[month]['ExtraTrees'][i])
                         clf.fit(train_x_dict[j], train_y_dict[j])
                         predict_y = clf.predict_proba(valid_x_dict[j])
                         predict = pd.DataFrame({'E': predict_y[:, 0]})
@@ -300,21 +258,21 @@ def transform_train(train_data, num_set, mode, base_param, cv):
                 elif mode == 'R':
                     
                     if 'XGBoost' in model_list:
-                        reg = XGBRegressor(**base_param[month]['XGBoost'][f'set{i}'], n_jobs = -1)
+                        reg = XGBRegressor(**base_param[month]['XGBoost'][i], n_jobs = -1)
                         reg.fit(train_x_dict[j], train_y_dict[j])
                         predict_y = reg.predict(valid_x_dict[j])
                         predict = pd.DataFrame({'X': predict_y})
                         model_predict = pd.concat([model_predict, predict], axis = 1)
 
                     if 'LightGBM' in model_list:
-                        reg = LGBMRegressor(**base_param[month]['LightGBM'][f'set{i}'])
+                        reg = LGBMRegressor(**base_param[month]['LightGBM'][i])
                         reg.fit(train_x_dict[j], train_y_dict[j])
                         predict_y = reg.predict(valid_x_dict[j])
                         predict = pd.DataFrame({'L': predict_y})
                         model_predict = pd.concat([model_predict, predict], axis = 1)
                         
                     if 'CatBoost' in model_list:
-                        reg = CatBoostRegressor(**base_param[month]['CatBoost'][f'set{i}'])
+                        reg = CatBoostRegressor(**base_param[month]['CatBoost'][i])
                         reg.fit(train_x_dict[j], train_y_dict[j])
                         predict_y = reg.predict(valid_x_dict[j])
                         predict = pd.DataFrame({'C': predict_y})
@@ -323,10 +281,10 @@ def transform_train(train_data, num_set, mode, base_param, cv):
                     if 'AdaBoost' in model_list:
                         tree_param = {
                             'base_estimator': DecisionTreeRegressor(
-                                max_depth = base_param[month]['AdaBoost'][f'set{i}']['max_depth']
+                                max_depth = base_param[month]['AdaBoost'][i]['max_depth']
                             )}
                         boost_param = dict(
-                            (key, base_param[month]['AdaBoost'][f'set{i}'][key]) for key in ['learning_rate', 'n_estimators']
+                            (key, base_param[month]['AdaBoost'][i][key]) for key in ['learning_rate', 'n_estimators']
                         )
                         boost_param.update(tree_param)
                         reg = AdaBoostRegressor(**boost_param)
@@ -336,14 +294,14 @@ def transform_train(train_data, num_set, mode, base_param, cv):
                         model_predict = pd.concat([model_predict, predict], axis = 1)
                         
                     if 'RandomForest' in model_list:
-                        reg = RandomForestRegressor(**base_param[month]['RandomForest'][f'set{i}'])
+                        reg = RandomForestRegressor(**base_param[month]['RandomForest'][i])
                         reg.fit(train_x_dict[j], train_y_dict[j])
                         predict_y = reg.predict(valid_x_dict[j])
                         predict = pd.DataFrame({'R': predict_y})
                         model_predict = pd.concat([model_predict, predict], axis = 1)
                     
                     if 'ExtraTrees' in model_list:
-                        reg = ExtraTreesRegressor(**base_param[month]['ExtraTrees'][f'set{i}'])
+                        reg = ExtraTreesRegressor(**base_param[month]['ExtraTrees'][i])
                         reg.fit(train_x_dict[j], train_y_dict[j])
                         predict_y = reg.predict(valid_x_dict[j])
                         predict = pd.DataFrame({'E': predict_y})
@@ -353,22 +311,24 @@ def transform_train(train_data, num_set, mode, base_param, cv):
                 done_cv = pd.concat([model_predict, test_label], axis = 1)
                 all_cv = pd.concat([all_cv, done_cv], axis = 0)
                 
-            set_dict[f'set{i}'] = pd.concat([set_dict[f'set{i}'], all_cv], axis = 0)
+            set_dict[i] = pd.concat([set_dict[i], all_cv], axis = 0)
     
     return set_dict
 
 
-def transform_test(train_data, test_data, num_set, mode, base_param):
+# input testing data to the base learners and output the outcome
+def transform_test(train_data, test_data, mode, base_param):
     
     month_list = list(base_param.keys())
     model_list = list(base_param[month_list[0]].keys())
+    set_list = list(base_param[month_list[0]][model_list[0]].keys())
     test_dict = {}
-    for i in tqdm(range(num_set)):
+    for i in tqdm(set_list):
         
         month_test = pd.DataFrame()
-        for month in tqdm(month_list):
+        for month in month_list:
 
-            train_x, train_y, test_x, test_y = label_divide(train_data[f'set{i}'], test_data, train_only = False)
+            train_x, train_y, test_x, test_y = label_divide(train_data[i], test_data, train_only = False)
             model_predict = pd.DataFrame()
             if mode == 'C':
 
@@ -376,18 +336,18 @@ def transform_test(train_data, test_data, num_set, mode, base_param):
                     temp_train = RunhistSet(train_x, train_y)
                     temp_test = RunhistSet(test_x, test_y)
                     train_loader = DataLoader(temp_train, 
-                                              batch_size = base_param[month]['NeuralNetwork'][f'set{i}']['batch_size'], 
+                                              batch_size = base_param[month]['NeuralNetwork'][i]['batch_size'], 
                                               shuffle = True)
                     test_loader = DataLoader(temp_test, batch_size = len(test_x), shuffle = False)
                     nn_model = NeuralNetworkC(dim = train_x.shape[1])
                     optimizer = torch.optim.Adam(nn_model.parameters(), 
-                                                 lr = base_param[month]['NeuralNetwork'][f'set{i}']['learning_rate'], 
-                                                 weight_decay = base_param[month]['NeuralNetwork'][f'set{i}']['weight_decay'])
+                                                 lr = base_param[month]['NeuralNetwork'][i]['learning_rate'], 
+                                                 weight_decay = base_param[month]['NeuralNetwork'][i]['weight_decay'])
                     criterion = nn.CrossEntropyLoss(
-                        weight = torch.tensor([1-base_param[month]['NeuralNetwork'][f'set{i}']['bad_weight'], 
-                                               base_param[month]['NeuralNetwork'][f'set{i}']['bad_weight']])).to('cpu')
+                        weight = torch.tensor([1-base_param[month]['NeuralNetwork'][i]['bad_weight'], 
+                                               base_param[month]['NeuralNetwork'][i]['bad_weight']])).to('cpu')
                     network, _, _ = trainingC(nn_model, train_loader, train_loader, optimizer, criterion, epoch = 100, 
-                                              filename = 'none', early_stop = 10)
+                                              early_stop = 10)
                     for X, Y in test_loader:
                         X, Y = X.float(), Y.long()
                         output = network(X)
@@ -396,21 +356,21 @@ def transform_test(train_data, test_data, num_set, mode, base_param):
                     model_predict = pd.concat([model_predict, predict], axis = 1)
                 
                 if 'XGBoost' in model_list:
-                    clf = XGBClassifier(**base_param[month]['XGBoost'][f'set{i}'], n_jobs = -1)
+                    clf = XGBClassifier(**base_param[month]['XGBoost'][i], use_label_encoder = False, n_jobs = -1)
                     clf.fit(train_x, train_y)
                     predict_y = clf.predict_proba(test_x)
                     predict = pd.DataFrame({'X': predict_y[:, 0]})
                     model_predict = pd.concat([model_predict, predict], axis = 1)
 
                 if 'LightGBM' in model_list:
-                    clf = LGBMClassifier(**base_param[month]['LightGBM'][f'set{i}'])
+                    clf = LGBMClassifier(**base_param[month]['LightGBM'][i])
                     clf.fit(train_x, train_y)
                     predict_y = clf.predict_proba(test_x)
                     predict = pd.DataFrame({'L': predict_y[:, 0]})
                     model_predict = pd.concat([model_predict, predict], axis = 1)
 
                 if 'CatBoost' in model_list:
-                    clf = CatBoostClassifier(**base_param[month]['CatBoost'][f'set{i}'])
+                    clf = CatBoostClassifier(**base_param[month]['CatBoost'][i])
                     clf.fit(train_x, train_y)
                     predict_y = clf.predict_proba(test_x)
                     predict = pd.DataFrame({'C': predict_y[:, 0]})
@@ -419,10 +379,10 @@ def transform_test(train_data, test_data, num_set, mode, base_param):
                 if 'AdaBoost' in model_list:
                     tree_param = {
                         'base_estimator': DecisionTreeClassifier(
-                            max_depth = base_param[month]['AdaBoost'][f'set{i}']['max_depth']
+                            max_depth = base_param[month]['AdaBoost'][i]['max_depth']
                         )}
                     boost_param = dict(
-                        (key, base_param[month]['AdaBoost'][f'set{i}'][key]) for key in ['learning_rate', 'n_estimators']
+                        (key, base_param[month]['AdaBoost'][i][key]) for key in ['learning_rate', 'n_estimators']
                     )
                     boost_param.update(tree_param)
                     clf = AdaBoostClassifier(**boost_param)
@@ -432,14 +392,14 @@ def transform_test(train_data, test_data, num_set, mode, base_param):
                     model_predict = pd.concat([model_predict, predict], axis = 1)
 
                 if 'RandomForest' in model_list:
-                    clf = RandomForestClassifier(**base_param[month]['RandomForest'][f'set{i}'])
+                    clf = RandomForestClassifier(**base_param[month]['RandomForest'][i])
                     clf.fit(train_x, train_y)
                     predict_y = clf.predict_proba(test_x)
                     predict = pd.DataFrame({'R': predict_y[:, 0]})
                     model_predict = pd.concat([model_predict, predict], axis = 1)
 
                 if 'ExtraTrees' in model_list:
-                    clf = ExtraTreesClassifier(**base_param[month]['ExtraTrees'][f'set{i}'])
+                    clf = ExtraTreesClassifier(**base_param[month]['ExtraTrees'][i])
                     clf.fit(train_x, train_y)
                     predict_y = clf.predict_proba(test_x)
                     predict = pd.DataFrame({'E': predict_y[:, 0]})
@@ -448,21 +408,21 @@ def transform_test(train_data, test_data, num_set, mode, base_param):
             elif mode == 'R':
 
                 if 'XGBoost' in model_list:
-                    reg = XGBRegressor(**base_param[month]['XGBoost'][f'set{i}'], n_jobs = -1)
+                    reg = XGBRegressor(**base_param[month]['XGBoost'][i], n_jobs = -1)
                     reg.fit(train_x, train_y)
                     predict_y = reg.predict(test_x)
                     predict = pd.DataFrame({'X': predict_y})
                     model_predict = pd.concat([model_predict, predict], axis = 1)
 
                 if 'LightGBM' in model_list:
-                    reg = LGBMRegressor(**base_param[month]['LightGBM'][f'set{i}'])
+                    reg = LGBMRegressor(**base_param[month]['LightGBM'][i])
                     reg.fit(train_x, train_y)
                     predict_y = reg.predict(test_x)
                     predict = pd.DataFrame({'L': predict_y})
                     model_predict = pd.concat([model_predict, predict], axis = 1)
 
                 if 'CatBoost' in model_list:
-                    reg = CatBoostRegressor(**base_param[month]['CatBoost'][f'set{i}'])
+                    reg = CatBoostRegressor(**base_param[month]['CatBoost'][i])
                     reg.fit(train_x, train_y)
                     predict_y = reg.predict(test_x)
                     predict = pd.DataFrame({'C': predict_y})
@@ -471,10 +431,10 @@ def transform_test(train_data, test_data, num_set, mode, base_param):
                 if 'AdaBoost' in model_list:
                     tree_param = {
                         'base_estimator': DecisionTreeRegressor(
-                            max_depth = base_param[month]['AdaBoost'][f'set{i}']['max_depth']
+                            max_depth = base_param[month]['AdaBoost'][i]['max_depth']
                         )}
                     boost_param = dict(
-                        (key, base_param[month]['AdaBoost'][f'set{i}'][key]) for key in ['learning_rate', 'n_estimators']
+                        (key, base_param[month]['AdaBoost'][i][key]) for key in ['learning_rate', 'n_estimators']
                     )
                     boost_param.update(tree_param)
                     reg = AdaBoostRegressor(**boost_param)
@@ -484,14 +444,14 @@ def transform_test(train_data, test_data, num_set, mode, base_param):
                     model_predict = pd.concat([model_predict, predict], axis = 1)
 
                 if 'RandomForest' in model_list:
-                    reg = RandomForestRegressor(**base_param[month]['RandomForest'][f'set{i}'])
+                    reg = RandomForestRegressor(**base_param[month]['RandomForest'][i])
                     reg.fit(train_x, train_y)
                     predict_y = reg.predict(test_x)
                     predict = pd.DataFrame({'R': predict_y})
                     model_predict = pd.concat([model_predict, predict], axis = 1)
 
                 if 'ExtraTrees' in model_list:
-                    reg = ExtraTreesRegressor(**base_param[month]['ExtraTrees'][f'set{i}'])
+                    reg = ExtraTreesRegressor(**base_param[month]['ExtraTrees'][i])
                     reg.fit(train_x, train_y)
                     predict_y = reg.predict(test_x)
                     predict = pd.DataFrame({'E': predict_y})
@@ -499,16 +459,17 @@ def transform_test(train_data, test_data, num_set, mode, base_param):
 
             month_test = pd.concat([month_test, model_predict], axis = 1)
         month_done = pd.concat([month_test, test_y], axis = 1)
-        test_dict[f'set{i}'] = month_done
+        test_dict[i] = month_done
         
     return test_dict
 
 
-# ### meta learner
+# ### Meta Learner
 
-# In[12]:
+# In[62]:
 
 
+# input training data transformed by base classifiers and output the final prediction 
 def LR(train_x, test_x, train_y, test_y, config):
     
     subconfig = config.copy()
@@ -527,6 +488,7 @@ def LR(train_x, test_x, train_y, test_y, config):
     return result, coef
 
 
+# input training data transformed by base regressors and output the final prediction (optional)
 def RidgeR(train_x, test_x, train_y, test_y, config):
     
     reg = Ridge(**config)
@@ -538,32 +500,34 @@ def RidgeR(train_x, test_x, train_y, test_y, config):
     return result, coef
 
 
-def runall_LR(num_set, trainset_x, testset_x, trainset_y, testset_y, config):
+# run all resampling datasets to the meta classifer
+def runall_LR(trainset_x, testset_x, trainset_y, testset_y, config):
     
     table_set = pd.DataFrame()
     coef_set = pd.DataFrame()
-    judge = list(config.keys())[0]
+    set_index = list(config.keys())
+    judge = set_index[0]
 
-    for i in tqdm(range(num_set)):
-        print('\n', f'Dataset {i}:')
-        
+    for i, j in tqdm(enumerate(set_index)):
+        print('\n', f'Data{j}:')
         if isinstance(config[judge], dict) :
-            best_config = config[f'set{i}']
+            best_config = config[j]
         else :
             best_config = config
-        model_name = trainset_x[f'set{i}'].columns.to_list()
+        model_name = trainset_x[j].columns.to_list()
 
-        result, coef = LR(trainset_x[f'set{i}'], testset_x[f'set{i}'], trainset_y[f'set{i}'], testset_y[f'set{i}'], 
+        result, coef = LR(trainset_x[j], testset_x[j], trainset_y[j], testset_y[j], 
                           best_config)
-        table = cf_matrix(result, trainset_y[f'set{i}'])
-        coef_df = pd.DataFrame({f'set{i}': coef.flatten()})
-        table_set = pd.concat([table_set, table]).rename(index = {0: f'dataset {i}'})
+        table = cf_matrix(result, trainset_y[j])
+        coef_df = pd.DataFrame({str(j): coef.flatten()})
+        table_set = pd.concat([table_set, table]).rename(index = {0: f'data{j}'})
         coef_set = pd.concat([coef_set, coef_df], axis = 1)
     coef_set.index = model_name
     
     return table_set, coef_set
 
 
+# run all resampling datasets to the meta regressor (optional)
 def runall_RidgeR(num_set, trainset_x, testset_x, trainset_y, testset_y, config, thres_target = 'Recall', 
                     threshold = False):
     
@@ -595,9 +559,9 @@ def runall_RidgeR(num_set, trainset_x, testset_x, trainset_y, testset_y, config,
     return pr_dict, table_set, coef_set
 
 
-# ### feature importance
+# ### Feature Importance
 
-# In[5]:
+# In[198]:
 
 
 def correlation_plot(target_data):
@@ -621,9 +585,9 @@ def forest_importance(target_data, mode = 'C'):
     colname = target_data.columns.to_list()[:-1]
     X, Y = label_divide(target_data, None, 'GB', train_only = True)
     if mode == 'C':
-        clf = RandomForestClassifier(max_depth = 5, n_estimators = 500)
+        clf = RandomForestClassifier(n_estimators = 500)
     elif mode == 'R':
-        clf = RandomForestRegressor(max_depth = 5, n_estimators = 500)
+        clf = RandomForestRegressor(n_estimators = 500)
     clf.fit(X, Y)
     importance = clf.feature_importances_
     std = np.std([tree.feature_importances_ for tree in clf.estimators_], axis = 0)
@@ -633,25 +597,25 @@ def forest_importance(target_data, mode = 'C'):
     plt.figure()
     plt.barh(importances.index, importances['importance'].values, color = 'darkgreen', 
              xerr = importances['std'].values, ecolor = 'limegreen')
-    plt.title('Feature Importance by Random Forest')
+    plt.title('Feature Importance by RandomForest Node Split')
     plt.xlabel('importance')
     plt.ylabel('model')
     
     return importances
     
     
-def forest_permutation(target_data, mode = 'C'):
+def xgb_permutation(target_data, mode = 'C'):
     
     colnames = target_data.columns.to_list()[:-1]
     X, Y = label_divide(target_data, None, 'GB', train_only = True)
     X_train, X_test, y_train, y_test = train_test_split(X, Y)
     if mode == 'C':
-        clf = RandomForestClassifier(max_depth = 5, n_estimators = 300)
+        clf = XGBClassifier(n_estimators = 500)
     elif mode == 'R':
-        clf = RandomForestRegressor(max_depth = 5, n_estimators = 300)
+        clf = XGBRegressor(n_estimators = 500)
     clf.fit(X_train, y_train)
     
-    importance = permutation_importance(clf, X_test, y_test, n_repeats = 20, n_jobs = 2)
+    importance = permutation_importance(clf, X_test, y_test, n_repeats = 10, n_jobs = 2)
     importances = pd.DataFrame(dict(importance = importance.importances_mean, std = importance.importances_std), 
                                index = colnames)
     importances = importances.sort_values('importance', ascending = True)
@@ -659,7 +623,7 @@ def forest_permutation(target_data, mode = 'C'):
     plt.figure()
     plt.barh(importances.index, importances['importance'].values, color = 'firebrick', 
              xerr = importances['std'].values, ecolor = 'coral')
-    plt.title('Feature Importance by Permutation (Random Forest)')
+    plt.title('Feature Importance by LightGBM Permutation')
     plt.xlabel('importance')
     plt.ylabel('model')
     
@@ -667,25 +631,24 @@ def forest_permutation(target_data, mode = 'C'):
 
 
 #####!!!!! forest_shap can only run for regressor !!!!!#####
-def forest_shap(target_data, mode = 'R'):
+def lgbm_shap(target_data, mode = 'C'):
     
     colnames = target_data.columns.to_list()[:-1]
     X, Y = label_divide(target_data, None, 'GB', train_only = True)
     if mode == 'C':
-        clf = RandomForestClassifier(max_depth = 5, n_estimators = 300)
+        d_train = lightgbm.Dataset(X, label = Y)
+        clf = lightgbm.train(dict(n_estimators = 300, objective = 'binary'), d_train, 500, verbose_eval = -1)
     elif mode == 'R':
-        clf = RandomForestRegressor(max_depth = 5, n_estimators = 300)
-    clf.fit(X, Y)
+        clf = LGBMRegressor(n_estimators = 500)
+        clf.fit(X, Y)
     
     explainer = shap.Explainer(clf)
-    shap_value = explainer(X)
-    values = abs(shap_value.values).mean(axis = 0)
-    values = values / sum(values)
+    shap_values = explainer.shap_values(X)
+    values = abs(shap_values[1]).mean(axis = 0)
     shap_df = pd.DataFrame(dict(value = values), index = colnames).sort_values('value', ascending = True)
     
     plt.figure()
-    shap.plots.bar(shap_value)
-    shap.plots.beeswarm(shap_value)
+    shap.summary_plot(shap_values, X)
     
     return shap_df
 
@@ -710,11 +673,12 @@ def GLM_coefficient(target_data, mode = 'C'):
 #####!!!!! forest_shap can only run for regressor !!!!!#####
 def rank_importance(target_data, mode = 'C'):
     
+    print(vif(target_data))
     correlation = correlation_plot(target_data)
     coefficient = GLM_coefficient(target_data, mode = mode).GLM
     forest = forest_importance(target_data, mode = mode).importance
-    permutation = forest_permutation(target_data, mode = mode).importance
-    shapvalue = forest_shap(target_data).value
+    permutation = xgb_permutation(target_data, mode = mode).importance
+    shapvalue = lgbm_shap(target_data).value
     rank_df = pd.DataFrame()
     rank_df['GLM'] = coefficient.rank(ascending = False)
     rank_df['forest'] = forest.rank(ascending = False)
@@ -726,19 +690,25 @@ def rank_importance(target_data, mode = 'C'):
     return rank_df
 
 
-# ### optuna
+# ### Optuna
 
-# In[20]:
+# In[159]:
 
 
-def stackingCV_creator(train_data, mode, num_valid = 3, label = 'GB') :
+# creator of optuna study for all 3 schemes of stackingCV
+def stackingCV_creator(train_data, mode, learner = 'ExtraTrees', num_valid = 5, label = 'GB'):
     
-    def objective(trial) :
-        # hyperparameters randomize setting
-        if mode == 'C' :
-            meta_learner = {'meta_learner': trial.suggest_categorical('meta_learner', ['LogisticRegression', 'ExtraTrees'])}
+    if learner not in ['LogisticRegression', 'ExtraTrees']:
+        raise(f'{learner} is not implemented !')
+    
+    def objective(trial):
+        
+        if mode == 'C':
+            meta_learner = {
+                'meta_learner': trial.suggest_categorical('meta_learner', [learner])
+            }
             
-            if meta_learner['meta_learner'] == 'LogisticRegression' :      
+            if meta_learner['meta_learner'] == 'LogisticRegression':      
                 param = {
                     'solver': 'lbfgs',
                     'C': trial.suggest_categorical('C', [100, 10 ,1 ,0.1, 0.01]),
@@ -746,25 +716,25 @@ def stackingCV_creator(train_data, mode, num_valid = 3, label = 'GB') :
                     'n_jobs': -1
                 }
 
-            elif meta_learner['meta_learner'] == 'ExtraTrees' :
+            elif meta_learner['meta_learner'] == 'ExtraTrees':
                 param = {
                     'n_estimators': trial.suggest_int('n_estimators', 100, 500, step = 200),
-                    'min_samples_split': trial.suggest_int('min_samples_split', 2, 32, step = 5),
-                    'max_depth': trial.suggest_int('max_depth', 3, 21, step = 3),
+                    'min_samples_split': trial.suggest_int('min_samples_split', 2, 24, step = 2),
+                    'max_depth': trial.suggest_int('max_depth', 2, 4, step = 1),
                     'n_jobs': -1
                 }
             
             param.update(meta_learner)
 
-        elif mode == 'R' :
+        elif mode == 'R':
             meta_learner = 'RidgeCV'
             
-            if meta_learner == 'RidgeCV' :
+            if meta_learner == 'RidgeCV':
                 param = {
                     'alpha': trial.suggest_float('alpha', 0, 1, step = 0.1)
                 }
             
-            elif meta_learner == 'Extra Trees' :
+            elif meta_learner == 'Extra Trees':
                 param = {
                     'n_estimators': trial.suggest_int('n_estimators', 100, 500, step = 100),
                     'min_samples_split': trial.suggest_int('min_samples_split', 2, 32, step = 5),
@@ -792,8 +762,12 @@ def stackingCV_creator(train_data, mode, num_valid = 3, label = 'GB') :
                 table = cf_matrix(result, valid_y)
                 recall = table['Recall']
                 precision = table['Precision']
-                aging = table['Aging Rate']
-                result_list.append(recall+2*precision)
+                beta = 1
+                if recall.values > 0:
+                    fscore = ((1+beta**2)*recall*precision) / (recall+(beta**2)*precision)
+                else:
+                    fscore = 0
+                result_list.append(fscore)
 
             elif mode == 'R':
                 result, _ = RidgeR(train_x, valid_x, train_y, valid_y, param)
@@ -805,12 +779,12 @@ def stackingCV_creator(train_data, mode, num_valid = 3, label = 'GB') :
     
     return objective
 
-'''
+
 # ## 
+'''
+# ### Load Data
 
-# ### loading training & testing data
-
-# In[7]:
+# In[65]:
 
 
 ### training data ### 
@@ -820,7 +794,7 @@ data_dict, trainset_x, trainset_y = multiple_month(training_month, num_set = 10,
 
 print('\nCombined training data:\n')
 run_train = multiple_set(num_set = 10)
-run_train_x, run_train_y = train_set(run_train, num_set = 10)
+run_train_x, run_train_y = train_set(run_train)
 
 ### testing data ###
 run_test = pd.read_csv('test_runhist.csv').iloc[:, 2:]
@@ -828,195 +802,152 @@ run_test_x, run_test_y = label_divide(run_test, None, 'GB', train_only = True)
 print('\n', 'Dimension of testing data:', run_test.shape)
 
 
-# ## base learner
+# ## Base Learner
 
-# ### optimize the base learners by one-month data
+# ### Hyperparameters for Training Data Transformation
 
-# #### for training data transformation
-
-# In[ ]:
+# In[66]:
 
 
-##### by optuna ##### 
-base_param_monthC = optimize_base(num_set = 10, 
-                                  train_data = data_dict, 
+target_month = range(2, 5)
+target_model = ['LightGBM', 'XGBoost', "NeuralNetwork"]
+target_iter = {'LightGBM': 25, 'XGBoost': 25, 'NeuralNetwork': 10}
+
+
+# In[67]:
+
+
+##### datasets of each month are optimized by by optuna ##### 
+base_param_monthC = optimize_base(train_data = data_dict, 
                                   mode = 'C', 
-                                  TPE_multi = True, 
-                                  base_list = ['NeuralNetwork', 'XGBoost', 'LightGBM'],
-                                  iter_list = [20, 200, 200],
+                                  TPE_multi = False, 
+                                  base_list = target_model,
+                                  iter_dict = target_iter,
                                   filename = 'runhist_array_m2m4_m5_3criteria')
 
-# base_param_monthR = optimize_base(num_set = 10, 
-#                                   train_data = data_dict, 
-#                                   mode = 'R', 
-#                                   TPE_multi = True, 
-#                                   base_list = ['XGBoost', 'LightGBM'],
-#                                   iter_list = [200, 200],
-#                                   filename = 'runhist_array_4criteria_m2m5')
+
+# In[14]:
 
 
-# In[8]:
-
-
-##### 'OR' by loading from stackingCV scheme 2 #####
-base_param_monthC = month_param(num_set = 10, 
-                                date = '20211207', 
-                                month_list = list(range(2, 5)), 
-                                model_list = ['NeuralNetwork', 'LightGBM', 'XGBoost'], 
-                                iter_list = [20, 200, 200], 
+##### or load hyperparmeters of base learner from stackingCV scheme 2 #####
+base_param_monthC = month_param(date = '20220315', 
+                                month_list = list(target_month), 
+                                model_list = target_model, 
+                                iter_dict = target_iter, 
                                 filename = 'runhist_array_m2m4_m5_3criteria', 
                                 mode = 'C', 
                                 TPE_multi = False)
 
-# base_param_monthR = month_param(num_set = 10, 
-#                                 date = '20211019', 
-#                                 month_list = [2, 3, 4], 
-#                                 model_list = ['XGBoost', 'LightGBM'], 
-#                                 iter_list = [200, 200], 
-#                                 filename = 'runhist_array_4criteria_m2m5', 
-#                                 mode = 'R', 
-#                                 TPE_multi = True)
+
+# ### Hyperparameters for Testing Data Transformation
+
+# In[68]:
 
 
-# #### for testing data transformation
-
-# In[ ]:
-
-
-##### by optuna ##### 
-base_param_allC = optimize_base(num_set = 10, 
-                                train_data = {'all': run_train}, 
+##### datasets of whole are optimized by by optuna ##### 
+base_param_allC = optimize_base(train_data = {'all': run_train}, 
                                 mode = 'C', 
                                 TPE_multi = False, 
-                                base_list = ['LightGBM', 'CatBoost', 'RandomForest'], 
-                                iter_list = [200, 200, 50],
-                                filename = 'runhist_array_m1m6_m7_3criteria')
-
-# base_param_allR = optimize_base(num_set = 10, 
-#                                 train_data = {'all': run_train}, 
-#                                 mode = 'R', 
-#                                 TPE_multi = True, 
-#                                 base_list = ['XGBoost', 'LightGBM'], 
-#                                 iter_list = [200, 200],
-#                                 filename = 'runhist_array_4criteria_m2m5')
+                                base_list = target_model, 
+                                iter_dict = target_iter,
+                                filename = 'runhist_array_m2m4_m5_3criteria')
 
 
-# In[9]:
+# In[115]:
 
 
-##### 'OR' by loading from stackingCV scheme 1 #####
-base_param_allC = all_param(num_set = 10, 
-                           date = '20211207', 
-                           model_list = ['NeuralNetwork', 'LightGBM', 'XGBoost'], 
-                           iter_list = [20, 200, 200], 
-                           filename = 'runhist_array_m2m4_m5_3criteria', 
-                           mode = 'C', 
-                           TPE_multi = False)
-
-# base_param_allR = all_param(num_set = 10, 
-#                            date = '20211123', 
-#                            model_list = ['XGBoost', 'LightGBM'], 
-#                            iter_list = [200, 200], 
-#                            filename = 'runhist_array_m2m5_4selection', 
-#                            mode = 'R', 
-#                            TPE_multi = True)
+##### or load hyperparmeters of base learner from stackingCV scheme 1 #####
+base_param_allC = all_param(date = '20220308', 
+                            model_list = target_model, 
+                            iter_dict = target_iter, 
+                            filename = 'runhist_array_m2m4_m5_3criteria', 
+                            mode = 'C', 
+                            TPE_multi = False)
 
 
 # 
-# ### data transform for scheme 3
+# ### Data Transform
 
-# In[31]:
-
-
-train_firstC = transform_train(data_dict, num_set = 10, mode = 'C', base_param = base_param_monthC, cv = 5)
-test_firstC = transform_test(run_train, run_test, num_set = 10, mode = 'C', base_param = dict(all = base_param_allC))
-train_firstC_x, train_firstC_y = train_set(train_firstC, num_set = 10)
-test_firstC_x, test_firstC_y = train_set(test_firstC, num_set = 10) 
-
-# train_firstR = transform_train(data_dict, num_set = 10, mode = 'R', base_param = base_param_monthR, cv = 5)
-# test_firstR = transform_test(run_train, run_test, num_set = 10, mode = 'R', base_param = dict(all = base_param_allR))
-# train_firstR_x, train_firstR_y = train_set(train_firstR, num_set = 10)
-# test_firstR_x, test_firstR_y = train_set(test_firstR, num_set = 10) 
+# In[71]:
 
 
-# ## meta learner
+print('Transform Training Data:')
+train_firstC = transform_train(data_dict, 
+                               mode = 'C', 
+                               base_param = base_param_monthC, 
+                               cv = 5)
+print('\nTransform Testing Data:')
+test_firstC = transform_test(run_train, 
+                             run_test, 
+                             mode = 'C', 
+                             base_param = base_param_allC)
+train_firstC_x, train_firstC_y = train_set(train_firstC)
+test_firstC_x, test_firstC_y = train_set(test_firstC) 
 
-# ### searching for best hyperparameters
-
-# In[21]:
-
-
-best_paramC, _ = all_optuna(num_set = 10, 
-                            all_data = train_firstC, 
-                            mode = 'C', 
-                            TPE_multi = False, 
-                            n_iter = 10,
-                            filename = 'runhist_array_m2m4_m5_3criteria_StackingCV3',
-                            creator = stackingCV_creator
-)
-
-# best_paramR, _ = all_optuna(num_set = 10, 
-#                             all_data = train_firstR, 
-#                             mode = 'R', 
-#                             TPE_multi = True, 
-#                             n_iter = 10,
-#                             filename = f'runhist_array_4criteria_m2m5_StackingCV3',
-#                             creator = stackingCV_creator
-# )
+# ignore
+train_firstC['set0'] = {}
 
 
-# ### feature selection by feature importance
+# ## Meta Learner
 
-# In[22]:
+# ### Search for The Best Hyperparameters
 
-
-rank_importance(train_firstC['set7'], mode = 'C')
-
-
-# ### classifier
-
-# In[32]:
+# In[130]:
 
 
-table_setC, coefC = runall_LR(10, train_firstC_x, test_firstC_x, train_firstC_y, test_firstC_y, best_paramC)
-line_chart(table_setC, title = 'StackingCV Classifier (scheme 3)')
+best_paramC, all_scoreC = all_optuna(all_data = train_firstC, 
+                                     mode = 'C', 
+                                     TPE_multi = False, 
+                                     n_iter = 10,
+                                     filename = 'runhist_array_m2m4_m5_3criteria_StackingCV3',
+                                     creator = stackingCV_creator)
 
 
-# In[33]:
+# In[131]:
+
+
+##### optimization history plot #####
+optuna_history(best_paramC, all_scoreC, num_row = 3, num_col = 3, model = 'StackingCV Scheme3 Classifier')
+            
+##### best hyperparameter table #####
+param_table = pd.DataFrame(best_paramC).T
+param_table
+
+
+# ### Feature Importance of Meta Learner
+
+# In[199]:
+
+
+target_set = 5
+rank_importance(train_firstC[f'set{target_set}'], mode = 'C')
+
+
+# ### Classifier
+
+# In[132]:
+
+
+table_setC, coefC = runall_LR(train_firstC_x, test_firstC_x, train_firstC_y, test_firstC_y, best_paramC)
+line_chart(table_setC, title = 'StackingCV Classifier (Scheme 3)')
+
+
+# In[133]:
 
 
 table_setC
 
 
-# ### regressor
+# ### Export
 
-# In[ ]:
-
-
-pr_dict, table_setR, coefR = runall_RidgeR(10, train_firstR_x, test_firstR_x, train_firstR_y, test_firstR_y, 
-                                           best_paramR, thres_target = 'Recall', threshold = 0.7)
-line_chart(table_setR, title = 'StackingCV Regressor (scheme 3)')
+# In[17]:
 
 
-# In[ ]:
-
-
-multiple_curve(4, 3, pr_dict, table_setR, target = 'Aging Rate')
-multiple_curve(4, 3, pr_dict, table_setR, target = 'Precision')
-print(coefR)
-table_setR
-
-
-# ### export
-
-# In[ ]:
-
-
-savedate = '20211207'
+savedate = '20220315'
 TPE_multi = False
 
 table_setC['sampler'] = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
-table_setC['model'] = 'StackingCV 3'
+table_setC['model'] = 'StackingCV3'
 with pd.ExcelWriter(f'{savedate}_Classifier.xlsx', mode = 'a') as writer:
-    table_setC.to_excel(writer, sheet_name = 'StackingCV_3')
+    table_setC.to_excel(writer, sheet_name = 'StackingCV3')
 '''

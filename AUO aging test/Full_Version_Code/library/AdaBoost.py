@@ -41,7 +41,7 @@ def multiple_month(month_list, num_set, filename = 'dataset'):
     for i in month_list:
         print(f'\nMonth {i}:\n')
         month_dict[f'm{i}'] = multiple_set(num_set = num_set, filename = f'm{i}_{filename}')
-        trainset_x[f'm{i}'], trainset_y[f'm{i}'] = train_set(month_dict[f'm{i}'], num_set = num_set)
+        trainset_x[f'm{i}'], trainset_y[f'm{i}'] = train_set(month_dict[f'm{i}'])
         
     return month_dict, trainset_x, trainset_y
 
@@ -59,16 +59,17 @@ def multiple_set(num_set, filename = 'dataset'):
 
 
 # divided the data and the label, and store to two dictionaries
-def train_set(data_dict, num_set, label = 'GB'):
+def train_set(data_dict, label = 'GB'):
     
     trainset_x = {}
     trainset_y = {}
+    set_list = list(data_dict.keys())
     
-    for i in range(num_set):
-        X, Y = label_divide(data_dict[f'set{i}'], None, label, train_only = True)
-        trainset_x[f'set{i}'] = X
-        trainset_y[f'set{i}'] = Y  
-    print('\nLabels of ', num_set, 'datasets are divided.')
+    for i in set_list:
+        X, Y = label_divide(data_dict[i], None, label, train_only = True)
+        trainset_x[i] = X
+        trainset_y[i] = Y  
+    print('\nLabels of ', len(set_list), 'datasets are divided.')
     
     return trainset_x, trainset_y
 
@@ -454,13 +455,13 @@ def optuna_history(best_param, all_score, num_row, num_col, model):
                 axs[row, col].set_xlabel('Iterations')
                 axs[row, col].set_ylabel('Values')
 
-'''
+
 # ## 
 
 # ### Load Data
 
 # In[13]:
-
+'''
 
 ### training data ### 
 training_month = range(2, 5)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[16]:
+# In[1]:
 
 
 import os
@@ -11,12 +11,13 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
-
-# import smote_variants as sv
+'''
+import smote_variants as sv
+'''
 from imblearn.under_sampling import RandomUnderSampler, TomekLinks, InstanceHardnessThreshold, NearMiss
 from imblearn.over_sampling import ADASYN, SMOTEN
 
-from library.Data_Preprocessing import Balance_Ratio
+from library.Data_Preprocessing import Balance_Ratio, training_def
 from library.Training_Data_Processing import Corner, Kind
 '''
 os.chdir('C:/Users/user/Desktop/Darui_R08621110')
@@ -25,9 +26,10 @@ os.getcwd()
 
 # ## 
 
-# In[10]:
+# In[2]:
 
 
+# seperate a dataset into X & Y
 def label_divide(train, test, label = 'GB', train_only = False):
     
     train_x = train.drop(columns = label)
@@ -41,169 +43,106 @@ def label_divide(train, test, label = 'GB', train_only = False):
         return train_x, train_y
 
 
-# ### self-defined oversampling (border)
-# first writen by chungcheng, and then modified 
+# ### Self-Defined Oversampling (Modified Border)
+# first writen by ChungCheng Huang, and then modified 
 
-# In[11]:
+# In[3]:
 
 
-'''DEF 1'''
-## 計算距離 data1 及 data2 的距離
-## Output : 資料點之間的距離
-def Distance(data1, data2):
+# distance between instances
+def distance_matrix(data1, data2, triangle = False):
     
-    data1 = data1.iloc[:,:-1].values
-    data2 = data2.iloc[:,:-1].values
-
-    df=pd.DataFrame()
-    for i in tqdm(range(len(data1))):
-        
-        hamming_set=[]
-        for j in range(len(data2)):
-            
-            hamming = abs(data1[i] - data2[j]).sum()
-            hamming_set=np.append(hamming_set,hamming)
-            
-        hamming_set=pd.DataFrame(hamming_set).T
-        df=pd.concat([df,hamming_set])
-        
-    dis_df = df.reset_index().iloc[:,1:]
+    data1 = np.array(data1.iloc[:, :-1])
+    data2 = np.array(data2.iloc[:, :-1])
+    dis_mat = pd.DataFrame((data1[:, None, :] != data2).sum(2))
+    if triangle:
+        dis_mat = dis_mat.where(np.triu(np.ones(dis_mat.shape)).astype(bool))
     
-    return dis_df
+    return dis_mat
 
 
-'''DEF 2'''
-## 給定 df 和 value 找出其 row 和 col
-def getIndexes(dfObj, value):
-    ''' Get index positions of value in dataframe i.e. dfObj.'''
-    listOfPos = list()
+# find the (row, col) given the dataframe & distance
+def get_indexes(dis_mat, value):
+
+    pos_list = []
     # Get bool dataframe with True at positions where the given value exists
-    result = dfObj.isin([value])
+    result = dis_mat.isin([value])
     # Get list of columns that contains the value
-    seriesObj = result.any()
-    columnNames = list(seriesObj[seriesObj == True].index)
+    col_target = result.any()
+    colnames = list(col_target[col_target == True].index)
     # Iterate over list of columns and fetch the rows indexes where value exists
-    for col in columnNames:
+    for col in colnames:
         rows = list(result[col][result[col] == True].index)
         for row in rows:
-            listOfPos.append((row, col))
-    # Return a list of tuples indicating the positions of value in the dataframe
+            pos_list.append((row, col))
     
-    return listOfPos
+    return pos_list
 
 
-'''DEF 3'''
-## Input : X+Y(level)
-#給定一個 資料集 和 值 後, 找出相對應的位置
-def ID_Given_Distance_2(data1, data2, d):
+# smote between two given bad instances
+def perm(point_smote, cols_diff, num_over, farthest_generate = 3):
     
-    D_Matrix = Distance(data1, data2)
-    ##數量不同 無法使用上三角
-    D_Matrix = D_Matrix.where(np.triu(np.ones(D_Matrix.shape)).astype(np.bool))
-    combine = getIndexes(D_Matrix, d)
-    
-    return combine
-
-
-'''DEF 4'''
-# 2個以上不同 的排列組合
-def perm(cols):
-    
-    s=set()
-    num=cols-1 
-    random_list = []
-    for i in range(3) :
-        TF_list_1 = [True]*(cols-1-i) + [False]*(i+1)
-        TF_list_2 = [False]*(cols-1-i) + [True]*(i+1)
-        shuffle_time = [1, 3, 6]
-        
-        for j in range(shuffle_time[i]) :
-            temp1 = TF_list_1.copy()
-            temp2 = TF_list_2.copy()
-            random.shuffle(temp1)
-            random.shuffle(temp2)
-            random_list.append(temp1)
-            random_list.append(temp2)
+    generate_df = pd.DataFrame()
+    for i in range(num_over): # synthesize a new instances in every iteration
+        new_data = point_smote.copy()
+        change_num = random.sample(range(1, farthest_generate+1), 1)[0]
+        diff_index = cols_diff[cols_diff == True].index.tolist()
+        change_index = random.sample(diff_index, change_num)
+        for j in change_index: # change the index randomly selected based on central instance
+            new_data[j] = 1 if point_smote[j] == 0 else 0
+        new_df = pd.DataFrame(new_data).T
+        generate_df = pd.concat([generate_df, new_df], axis = 0)
             
-    return(random_list)
-    
+    return generate_df
 
-'''DEF 7'''
-#找到各組間隔為 rank 的座標
-def cumu_conbine(data, rank, level = 'GB'):
+
+# modified-border main function
+def Border(data, kind, max_distance, num_over, over_ratio = 1):
     
-    data1=data[data[level]==1]
-    data2=data[data[level]==0]
-    combine=[]
-    for i in range(rank):
-        combine=combine+ID_Given_Distance_2(data1,data2,i+1)
+    good_num = len(data[data.GB == 0])
+    bad_num = len(data[data.GB == 1])
+    bad_kind = kind[kind.GB == 1]
+    full_kind = kind.iloc[:, :-1].copy()
+    training_df = pd.DataFrame()
+    
+    bad_dis = distance_matrix(bad_kind, bad_kind) # calculate the distance between bad instances
+    for dis in range(1, max_distance+1):
+        print(f'Distance = {dis} ...')
+        done = False
+        bad_indexes = get_indexes(bad_dis, dis) # given the specific distance and find the pair of bad instances
         
-    return combine
-
-
-'''Main Function 1'''
-def Border(data, Near_Minor = 3, Major_Ratio_max = 0.5, n_major_corner = 20, level = 'GB'):
-    
-    data1=data[data[level]==1]
-    data2=data[data[level]==0]
-    d=data.iloc[:,:-1].copy()
-    training_df=pd.DataFrame()
-    
-    for a in tqdm(range(2,Near_Minor+1)):
-
-        combine=ID_Given_Distance_2(data1, data1, a)
-        smote_df=pd.DataFrame()
-        if len(combine)!=0:
-
-            for b in tqdm(range(len(combine))):
-
-                ##選定一組數字,一個當中心點
-                a_pair=combine[b]
-                point_0=a_pair[0]
-                point_1=a_pair[1]
-
-                # d_smote 的初始值和中心點一樣
-                d_smote=d.loc[point_0].copy()
-
-                # 找出有差異處的 cols
-                d_X=d.loc[point_0]-d.loc[point_1]
-                cols=d_X[d_X!=0].index
-
-                ## L為距離 2 的點之間的排列組合
-                L=perm(len(cols))
-
-                '''創造DATA_SMOTE(給定中心點:d_smote 和 L)'''
-                s_df=pd.DataFrame()
-
-                for i in tqdm(range(len(L))):
-
-                    cb=L[i]
-                    s=pd.DataFrame([d_smote]).copy()
-
-                    for j in range(len(cb)):
-                        if cb[j]==True:
-                            s[cols[j]]=1-d_smote[cols[j]]
-                        elif cb[j]==False:
-                            s[cols[j]]=d_smote[cols[j]]
-                    s_df=pd.concat([s_df,s])
-                s_df=s_df.reset_index(drop=True)
-
-                smote_df = pd.concat([smote_df, s_df]) #new added
-                smote_df['GB'] = 1 #new_added
-
-        smote_df=smote_df.drop_duplicates().reset_index(drop=True)
-        training_df=pd.concat([training_df,smote_df])
-
-    training_df=training_df.drop_duplicates().reset_index(drop=True)
+        smote_df = pd.DataFrame()
+        if len(bad_indexes) != 0:   
+            total_num = 0
+            for pair in bad_indexes:
+                point_0, point_1 = pair
+                point_smote = full_kind.loc[point_0].copy() # let point_0 be the initially central point of synthetic data
+                cols_diff = (full_kind.loc[point_0] != full_kind.loc[point_1]) # find the different cols between two bad
+                perm_df = perm(point_smote, cols_diff, int(num_over/2)) # generate new instances
+                smote_df = pd.concat([smote_df, perm_df], axis = 0)
+                total_num += len(perm_df)
+                
+                if (total_num + len(training_df) + bad_num) >= good_num*over_ratio: # synthetic bad instances are enough
+                    print(f'# over: {total_num}')
+                    done = True
+                    break
+            print(f'# over: {total_num}')
+                
+        training_df = pd.concat([training_df, smote_df], axis = 0)
+        training_df = training_df.drop_duplicates().reset_index(drop = True)
+        if done:
+            break
+    training_df['GB'] = 1
     
     return training_df
 
 
-# ### oversampling
+# ### Oversampling
 
-# In[12]:
+# In[4]:
 
 
+# oversampling preparation
 def before_over(dataset, label = 'GB'):
     
     colnames = dataset.columns
@@ -217,6 +156,7 @@ def before_over(dataset, label = 'GB'):
     return X, Y, colnames
 
 
+# processing data afer oversampling
 def after_over(X, Y, colnames, back_to_category = False):
     
     colnames = colnames[:X.shape[1]]
@@ -238,6 +178,7 @@ def after_over(X, Y, colnames, back_to_category = False):
     return X, Y
 
 
+# apply oversampling methods
 def over_sample(X, Y, method, ratio, n_neighbors = 5, *args):
     
     method_list = ['NoSMOTE', 'SMOTE', 'MSMOTE', 'ROSE', 'SMOTEN', 'ADASYN']
@@ -265,11 +206,12 @@ def over_sample(X, Y, method, ratio, n_neighbors = 5, *args):
     return over_X, over_Y
 
 
-# ### undersampling
+# ### Undersampling
 
-# In[13]:
+# In[5]:
 
 
+# undersampling preparation
 def before_under(dataset, label = 'GB'):
     
     Y = dataset[label]
@@ -278,6 +220,7 @@ def before_under(dataset, label = 'GB'):
     return X, Y
 
 
+# apply undersampling methods
 def under_sample(X, Y, method, ratio, *args):
     
     method_list = [None, 'random', 'Tomek', 'IHT', 'NM', 'one-sided', 'r-one-sided']
@@ -310,14 +253,15 @@ def under_sample(X, Y, method, ratio, *args):
     return under_X, under_Y
 
 
-# ### protocol to generate datasets
+# ### Protocol to Generate Datasets
 
-# In[39]:
+# In[6]:
 
 
+# resampling combination (undersampling first) 
 def under_over(dataset, over_method, under_method, over_ratio, under_ratio, label = 'GB'):
     
-    #undersampling
+    # undersampling
     if under_method != None:
         X, Y = before_under(dataset, label)
         Y = Y.astype(int)
@@ -326,7 +270,7 @@ def under_over(dataset, over_method, under_method, over_ratio, under_ratio, labe
         dataset = pd.concat([under_X, under_Y], axis = 1)
         print('Size after Undersampling:', len(under_Y))
     
-    #oversampling
+    # oversampling
     temp_X, temp_Y, colnames = before_over(dataset, label)
     print('Size before Oversampling:', len(temp_Y))
     over_X, over_Y = over_sample(temp_X, temp_Y, over_method, over_ratio)
@@ -336,9 +280,10 @@ def under_over(dataset, over_method, under_method, over_ratio, under_ratio, labe
     return X, Y
 
 
+# resampling combination (oversampling first)
 def over_under(dataset, over_method, under_method, over_ratio, under_ratio, label = 'GB') :
     
-    #oversampling
+    # oversampling
     if over_method != None :
         X, Y, colnames = before_over(dataset, label)
         print('Size before Oversampling:', len(Y))
@@ -348,7 +293,7 @@ def over_under(dataset, over_method, under_method, over_ratio, under_ratio, labe
         over_dataset = pd.concat([over_X, over_Y], axis = 1)
         dataset = over_dataset.rename(columns = {0 : label})
 
-    #undersampling
+    # undersampling
     X, Y = before_under(dataset, label)
     Y = Y.astype(int)
     under_X, under_Y = under_sample(X, Y, under_method, under_ratio)
@@ -356,11 +301,10 @@ def over_under(dataset, over_method, under_method, over_ratio, under_ratio, labe
     
     return under_X, under_Y
     
-    
+# main function to generating a resampling dataset
 def generate_set(train_data, over_method, under_method, index, over_ratio, under_ratio, order, label = 'GB'):
     
     print('\n', f'Generating Dataset {index}')
-    
     if order == 'under' :
         train_x, train_y = under_over(train_data, over_method, under_method, over_ratio, under_ratio, label)
     elif order == 'over' :
@@ -372,25 +316,19 @@ def generate_set(train_data, over_method, under_method, index, over_ratio, under
     return train
 
 
-def border_set(train_data, kind_data, under_method, index, min_over, under_ratio, order):
+# main function to generate a resampling dataset with border and undersampling technique
+def border_set(train_data, kind_data, under_method, index, num_over, over_ratio, under_ratio, order):
     
     ##### oversampling first #####
     if order == 'over':
-        print('Size before Border:', len(train_data))
-        redo = True
-        distance = 12
-        while redo:
-            OS_B = Border(kind_data, Near_Minor = distance)
-            self_runhist = pd.concat([train_data, OS_B], axis = 0).reset_index(drop = True)
-            if (len(self_runhist) - len(train_data)) < sum(train_data.GB)*min_over:
-                distance += 1
-            else:
-                redo = False
+        print('Size before Border:', len(train_data))    
+        OS_B = Border(train_data, kind_data, 25, num_over, over_ratio = over_ratio)
+        self_runhist = pd.concat([train_data, OS_B], axis = 0).reset_index(drop = True)
         print('Size after Border:', len(self_runhist))
         
         dataset = generate_set(self_runhist, None, under_method, index, over_ratio = None, under_ratio = under_ratio, 
                                order = 'over')
-        print(f'Size after Undersampling:', dataset.shape, ', Balance Ratio:', Balance_Ratio(dataset),               ', distance:', distance)
+        print(f'Size after Undersampling:', dataset.shape, ', Balance Ratio:', Balance_Ratio(dataset))
         
         return dataset
     
@@ -403,65 +341,45 @@ def border_set(train_data, kind_data, under_method, index, min_over, under_ratio
         
         corner_overlap = Corner(self_under)
         under_kind = Kind(corner_overlap).iloc[:, :-3]
-        
-        redo = True
-        distance = 12
-        while redo:
-            US_B = Border(under_kind, Near_Minor = distance)
-            dataset = pd.concat([self_under, US_B], axis = 0).reset_index(drop = True)
-            if (len(dataset) - len(self_under)) < len(self_under)*min_over*0.1:
-                distance += 1
-            else:
-                redo = False
-        print('Size after Border:', dataset.shape, ', Balance Ratio:', Balance_Ratio(dataset), ', distance:', distance)
+        US_B = Border(self_under, under_kind, 25, num_over, over_ratio = over_ratio)
+        dataset = pd.concat([self_under, US_B], axis = 0).reset_index(drop = True)
+        print('Size after Border:', dataset.shape, ', Balance Ratio:', Balance_Ratio(dataset))
         
         return dataset
 
 
 # ## 
 
-# ### loading training data & kind
+# ### Loading Relabeled Training Data & Kind
 
-# In[19]:
+# In[7]:
 '''
 
 ##### training data #####
-training_month = [2, 3, 4]
+training_month = range(2, 5)
 
 runhist = {}
 for i in training_month:
     runhist[f'm{i}'] = pd.read_csv(f'relabel_runhist_m{i}.csv', index_col = 'id').iloc[:, 1:]
-    print(f'Dimension of month {i}:', runhist[f'm{i}'].shape, ', # Bad Instance:', sum(runhist[f'm{i}'].GB))
-runhist['all'] = pd.read_csv('relabel_runhist.csv', index_col = 'id').iloc[:, 1:]
-print('Dimension of all runhist:', runhist['all'].shape, ', # Bad Instance:', sum(runhist['all'].GB))
+    print(f'Month {i}:')
+    print(f'Dimension:', runhist[f'm{i}'].shape, ', # Bad:', sum(runhist[f'm{i}'].GB))
+runhist['all'] = training_def(runhist, training_month)
+print('All Runhist Data:\n', 'Dimension of :', runhist['all'].shape, ', # Bad:', sum(runhist['all'].GB), '\n')
 
-##### kind data (for border) #####
+##### kind data (for border only) #####
 kinds = {}
 for i in training_month:
     kinds[f'm{i}'] = pd.read_csv(f'kind_m{i}.csv').iloc[:, 2:-3]
-    print(f'Number of kinds in month {i}:', len(kinds[f'm{i}']))
-kinds['all'] = pd.read_csv('kind.csv').iloc[:, 2:-3]
-print('Number of kinds in all runhist:', len(kinds['all']))
+    print(f'Month {i}:')
+    print(f'# kinds:', len(kinds[f'm{i}']))
 
 
-# ### oversampling by self-defined method
+# ### Oversampling & Undersampling Combination
 
-# In[40]:
-
-
-for i in tqdm(training_month):
-    dataset_2 = border_set(runhist[f'm{i}'], kinds[f'm{i}'], 'NM', 2, min_over = 9, under_ratio = 1, order = 'over')
-    dataset_6 = border_set(runhist[f'm{i}'], kinds[f'm{i}'], 'NM', 6, min_over = 9, under_ratio = 0.1, order = 'under')
-    dataset_2.to_csv(f'm{i}_dataset_2.csv')
-    dataset_6.to_csv(f'm{i}_dataset_6.csv')
+# In[9]:
 
 
-# ### oversampling & undersampling
-
-# In[50]:
-
-
-##### generate datasets #####
+##### main function for generating all resampling datasets #####
 dataset = {}
 combine_dataset = {}
 for i in range(10):
@@ -469,22 +387,40 @@ for i in range(10):
 
 for i in tqdm(training_month):
     
-    dataset[2] = border_set(runhist[f'm{i}'], kinds[f'm{i}'], 'NM', 2, min_over = 9, under_ratio = 1, order = 'over')
-    dataset[6] = border_set(runhist[f'm{i}'], kinds[f'm{i}'], 'NM', 6, min_over = 9, under_ratio = 0.1, order = 'under')
+    print(f'Month {i}:')
+    print('# bad:', sum(runhist[f'm{i}'].GB))
+    br = Balance_Ratio(runhist[f'm{i}'])
+    final_br = 0.1
+    num_os = 5
+    over_br = num_os / br
+    under_br = final_br / num_os
+    
+    
+    dataset[2] = border_set(runhist[f'm{i}'], kinds[f'm{i}'], 'NM', 2, num_over = num_os, over_ratio = over_br, 
+                            under_ratio = final_br, order = 'over')
+    dataset[6] = border_set(runhist[f'm{i}'], kinds[f'm{i}'], 'NM', 6, num_over = num_os, over_ratio = final_br, 
+                            under_ratio = under_br, order = 'under')
     
     dataset[0] = generate_set(runhist[f'm{i}'], 'NoSMOTE', None, 0, over_ratio = None, under_ratio = None, order = 'over')
 
-    dataset[1] = generate_set(runhist[f'm{i}'], 'ADASYN', 'NM', 1, over_ratio = 0.015, under_ratio = 1, order = 'over')
-    dataset[3] = generate_set(runhist[f'm{i}'], 'ROSE', 'NM', 3, over_ratio = 0.015, under_ratio = 1, order = 'over')
-    dataset[4] = generate_set(runhist[f'm{i}'], 'SMOTEN', 'NM', 4, over_ratio = 0.015, under_ratio = 1, order = 'over')
+    dataset[1] = generate_set(runhist[f'm{i}'], 'ADASYN', 'NM', 1, over_ratio = over_br, under_ratio = final_br, 
+                              order = 'over')
+    dataset[3] = generate_set(runhist[f'm{i}'], 'ROSE', 'NM', 3, over_ratio = over_br*(1-1/num_os), under_ratio = final_br,
+                              order = 'over')
+    dataset[4] = generate_set(runhist[f'm{i}'], 'SMOTEN', 'NM', 4, over_ratio = over_br, under_ratio = final_br, 
+                              order = 'over')
 
-    dataset[5] = generate_set(runhist[f'm{i}'], 'ADASYN', 'NM', 5, over_ratio = 1, under_ratio = 0.1, order = 'under')
-    dataset[7] = generate_set(runhist[f'm{i}'], 'ROSE', 'NM', 7, over_ratio = 1, under_ratio = 0.1, order = 'under')
-    dataset[8] = generate_set(runhist[f'm{i}'], 'SMOTEN', 'NM', 8, over_ratio = 1, under_ratio = 0.1, order = 'under')
-
-    dataset[9] = generate_set(runhist[f'm{i}'], None, 'NM', 9, over_ratio = None, under_ratio = 0.1, order = 'over')
+    dataset[5] = generate_set(runhist[f'm{i}'], 'ADASYN', 'NM', 5, over_ratio = final_br, under_ratio = under_br, 
+                              order = 'under')
+    dataset[7] = generate_set(runhist[f'm{i}'], 'ROSE', 'NM', 7, over_ratio = (final_br*(1-1/num_os)), 
+                              under_ratio = under_br, order = 'under')
+    dataset[8] = generate_set(runhist[f'm{i}'], 'SMOTEN', 'NM', 8, over_ratio = final_br, under_ratio = under_br, 
+                              order = 'under')
     
-    ### combine all training data after sampling by each month ###
+    special = final_br if final_br <0.1 else 0.1
+    dataset[9] = generate_set(runhist[f'm{i}'], None, 'NM', 9, over_ratio = None, under_ratio = special, order = 'over')
+    
+    ### combine all training data after sampling by each month and save data files ###
     for j in range(10):
         temp_combine = pd.concat([combine_dataset[j], dataset[j]], axis = 0).fillna(0)
         temp_cols = temp_combine.columns.to_list()
@@ -494,5 +430,4 @@ for i in tqdm(training_month):
         
         dataset[j].to_csv(f'm{i}_dataset_{j}.csv')
         combine_dataset[j].to_csv(f'dataset_{j}.csv')
-
 '''
