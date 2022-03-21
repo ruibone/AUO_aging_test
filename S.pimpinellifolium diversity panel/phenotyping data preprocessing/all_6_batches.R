@@ -8,12 +8,12 @@ library(formattable)
 library(bestNormalize)
 
 #####read data#####
-batch1 <- read.csv("C:/Users/agron_thesis/19TS-1_phenotype/19TS1st_phenotype.csv", header = T, sep = ",")
-batch2 <- read.csv("C:/Users/agron_thesis/19TS-2_phenotype/19TS2nd_phenotype.csv", header = T, sep = ",")
-batch3 <- read.csv("C:/Users/agron_thesis/20TS-1_phenotype/20TS1st_phenotype.csv", header = T, sep = ",")
-batch4 <- read.csv("C:/Users/agron_thesis/20TS-2_phenotype/20TS2nd_phenotype.csv", header = T, sep = ",")
-batch5 <- read.csv("C:/Users/agron_thesis/20TS-3_phenotype/20TS3rd_phenotype.csv", header = T, sep = ",")
-batch6 <- read.csv("C:/Users/agron_thesis/21TS-1_phenotype/21TS1st_phenotype.csv", header = T, sep = ",")
+batch1 <- read.csv("C:/Users/Darui Yen/MEGAsync/agron_thesis/data/phenotype/19TS-1_phenotype/19TS1st_phenotype.csv", header = T, sep = ",")
+batch2 <- read.csv("C:/Users/Darui Yen/MEGAsync/agron_thesis/data/phenotype/19TS-2_phenotype/19TS2nd_phenotype.csv", header = T, sep = ",")
+batch3 <- read.csv("C:/Users/Darui Yen/MEGAsync/agron_thesis/data/phenotype/20TS-1_phenotype/20TS1st_phenotype.csv", header = T, sep = ",")
+batch4 <- read.csv("C:/Users/Darui Yen/MEGAsync/agron_thesis/data/phenotype/20TS-2_phenotype/20TS2nd_phenotype.csv", header = T, sep = ",")
+batch5 <- read.csv("C:/Users/Darui Yen/MEGAsync/agron_thesis/data/phenotype/20TS-3_phenotype/20TS3rd_phenotype.csv", header = T, sep = ",")
+batch6 <- read.csv("C:/Users/Darui Yen/MEGAsync/agron_thesis/data/phenotype/21TS-1_phenotype/21TS1st_phenotype.csv", header = T, sep = ",")
 colnames(batch3)[1] <- "ID"
 colnames(batch4)[1] <- "ID"
 colnames(batch3)[21] <- "exsertion"
@@ -35,8 +35,6 @@ for (i in 3:21) {
   batch5[,i] <- batch5[,i]*20
   batch6[,i] <- batch6[,i]*20
 }
-
-
 
 
 #####data duplicate preprocessing#####
@@ -133,11 +131,11 @@ barplot(sort(control2$exsertion), main = "control2_exsertion", ylim = c(-1, 3),
         names.arg  = substr(control2$ID[order(control2$exsertion)], start = 7, stop = 10))
 barplot(sort(control3$exsertion), main = "control3_exsertion", ylim = c(-1, 3),
         names.arg  = substr(control3$ID[order(control3$exsertion)], start = 7, stop = 10))
-barplot(sort(control4$exsertion), main = "control4_exsertion", ylim = c(-0.05, 0.15),
+barplot(sort(control4$exsertion), main = "control4_exsertion", ylim = c(-1, 3),
         names.arg  = substr(control4$ID[order(control4$exsertion)], start = 7, stop = 10))
-barplot(sort(control5$exsertion), main = "control5_exsertion", ylim = c(-0.05, 0.15),
+barplot(sort(control5$exsertion), main = "control5_exsertion", ylim = c(-1, 3),
         names.arg  = substr(control5$ID[order(control5$exsertion)], start = 7, stop = 10))
-barplot(sort(control6$exsertion), main = "control6_exsertion", ylim = c(-0.05, 0.15),
+barplot(sort(control6$exsertion), main = "control6_exsertion", ylim = c(-1, 3),
         names.arg  = substr(control6$ID[order(control6$exsertion)], start = 7, stop = 10))
 
 ggplot(data = control_mean_sd, aes(x = ID, y = Mmean)) + 
@@ -154,7 +152,7 @@ ggplot(data = control_mean_sd, aes(x = ID, y = emean)) + ylab("length (mm)") + x
   ggtitle("Stigma Exsertion of Control Groups") + scale_x_discrete(limits = control_mean_sd$ID)
 
 ggplot(data = longcontrol, aes(x = ID, y = length, fill = gender)) + ylab("length (mm)") +
-  geom_bar(stat = "identity", position = position_dodge()) + ggtitle("Stamen & Style Length of Control Groups") +
+  geom_bar(stat = "identity", position = position_dodge()) + ggtitle("Stamen & Pistil Length of Control Groups") +
   geom_errorbar(aes(x = ID, ymin = length-sd, ymax = length+sd), position = position_dodge(), 
                 width = 0.9, color="brown", alpha = 1, size = 1) + scale_x_discrete(limits = control_mean_sd$ID)
 
@@ -192,48 +190,53 @@ comthird <- repli3[-index9,c(1,3:18)]#dim = 232 17
 first <- repli1[-index7,c(1,19:21)]#dim = 235 4
 second <- repli2[-index8,c(1,19:21)]#dim = 234 4
 third <- repli3[-index9,c(1,19:21)]#dim = 232 4
-
+first$MFratio <- first$Mmean / first$Fmean
+second$MFratio <- second$Mmean / second$Fmean
+third$MFratio <- third$Mmean / third$Fmean
 
 #####replicate distribution#####
 
 #barplot
-barplot(sort(first$exsertion), main = "exsertion_1st", ylim  = c(-0.1, 0.15), 
-        xlab = paste("exsertion rate = ", round(sum(first$exsertion >= 0)/length(first$exsertion),4)))
+barplot(sort(first$exsertion), main = "Stigma Exsertion in 1st Replicate", ylim  = c(-1, 4),
+        xlab = paste("exsertion rate = ", round(sum(first$exsertion >= 0)/length(first$exsertion),4)),
+        ylab = 'length (mm)', col = 'white')
 #exsertion rate = 217/235 = 0.9234
-barplot(sort(second$exsertion), main = "exsertion_2nd", ylim  = c(-0.05, 0.2),
-        xlab = paste("exsertion rate = ", round(sum(second$exsertion >= 0)/length(second$exsertion),4)))
+barplot(sort(second$exsertion), main = "Stigma Exsertion in 2nd Replicate", ylim  = c(-1, 4),
+        xlab = paste("exsertion rate = ", round(sum(second$exsertion >= 0)/length(second$exsertion),4)),
+        ylab = 'length (mm)', col = 'white')
 #exsertion rate = 215/234 = 0.9188
-barplot(sort(third$exsertion), main = "exsertion_3rd", ylim  = c(-0.05, 0.2),
-        xlab = paste("exsertion rate = ", round(sum(third$exsertion >= 0, na.rm = T)/length(third$exsertion),4)))
+barplot(sort(third$exsertion), main = "Stigma Exsertion in 3rd Replicate", ylim  = c(-1, 4),
+        xlab = paste("exsertion rate = ", round(sum(third$exsertion >= 0, na.rm = T)/length(third$exsertion),4)),
+        ylab = 'length (mm)', col = 'white')
 #exsertion rate = 214/232 = 0.9224
 
 all_exsertion <- (217+215+214)/(235+234+232)
 
 #ggplot preprocessing
-longfirst <- melt(first, id.vars = c("ID", "exsertion"), measure.vars = c("Mmean", "Fmean"), 
+longfirst <- melt(first, id.vars = c("ID", "exsertion", 'MFratio'), measure.vars = c("Mmean", "Fmean"), 
                   variable.name = "gender", value.name = "length")
-longsecond <- melt(second, id.vars = c("ID", "exsertion"), measure.vars = c("Mmean", "Fmean"), 
+longsecond <- melt(second, id.vars = c("ID", "exsertion", 'MFratio'), measure.vars = c("Mmean", "Fmean"), 
                    variable.name = "gender", value.name = "length")
-longthird <- melt(third, id.vars = c("ID", "exsertion"), measure.vars = c("Mmean", "Fmean"), 
+longthird <- melt(third, id.vars = c("ID", "exsertion", 'MFratio'), measure.vars = c("Mmean", "Fmean"), 
                   variable.name = "gender", value.name = "length")
 longcombined <- rbind(first, second, third) %>% 
   mutate(replicate = c(rep("1st", nrow(first)), rep("2nd", nrow(second)), rep("3rd", nrow(third))))
 
-mu1 <- ddply(longfirst, "gender", summarise, grp.mean = mean(length))
-mu2 <- ddply(longsecond, "gender", summarise, grp.mean = mean(length))
+mu1 <- ddply(longfirst, "gender", summarise, grp.mean = mean(length, na.rm = T))
+mu2 <- ddply(longsecond, "gender", summarise, grp.mean = mean(length, na.rm = T))
 mu3 <- ddply(longthird, "gender", summarise, grp.mean = mean(length, na.rm = T))
 mu4 <- ddply(longcombined, "replicate", summarise, grp.mean = mean(Mmean, na.rm = T))
 mu5 <- ddply(longcombined, "replicate", summarise, grp.mean = mean(Fmean, na.rm = T))
 mu6 <- ddply(longcombined, "replicate", summarise, grp.mean = mean(exsertion, na.rm = T))
 
 #ggplot
-ggplot(longfirst, aes(x = length, fill = gender)) + geom_density(alpha = 0.4) + xlim(2,7.5) +
+ggplot(longfirst, aes(x = length, fill = gender)) + geom_density(alpha = 0.4) + xlim(2.5,17.5) +
   geom_vline(data = mu1, aes(xintercept = grp.mean, color = gender), linetype = "dashed", size = 2) +
   ggtitle("the stamen & style length of 1st replicate")
-ggplot(longsecond, aes(x = length, fill = gender)) + geom_density(alpha = 0.4) + xlim(2,8) +
+ggplot(longsecond, aes(x = length, fill = gender)) + geom_density(alpha = 0.4) + xlim(2.5,17.5) +
   geom_vline(data = mu2, aes(xintercept = grp.mean, color = gender), linetype = "dashed", size = 2) +
   ggtitle("the stamen & style length of 2nd replicate")
-ggplot(longthird, aes(x = length, fill = gender)) + geom_density(alpha = 0.4) + xlim(2,8) +
+ggplot(longthird, aes(x = length, fill = gender)) + geom_density(alpha = 0.4) + xlim(2.5,17.5) +
   geom_vline(data = mu3, aes(xintercept = grp.mean, color = gender), linetype = "dashed", size = 2) +
   ggtitle("the stamen & style length of 3rd replicate")
 
@@ -259,8 +262,10 @@ Mindex <- seq(2, ncol(combinemean), 2)
 
 combinemean <- combinemean %>%
   mutate(Fmean = rowMeans(combinemean[,Findex], na.rm = T), 
-         Mmean = rowMeans(combinemean[,Mindex], na.rm = T)) 
-combinemean <- mutate(combinemean, exsertion = combinemean$Fmean - combinemean$Mmean) #dim = 235 52(1+3*16+3)
+         Mmean = rowMeans(combinemean[,Mindex], na.rm = T))
+combinemean <- combinemean %>%
+  mutate(MFratio = (combinemean$Mmean/combinemean$Fmean),
+         exsertion = (combinemean$Fmean - combinemean$Mmean))#dim = 235 53(1+3*16+4)
 
 #transfer the format for plotting
 longFM <- melt(combinemean, id.vars = "ID", measure.vars = c("Mmean", "Fmean"), 
@@ -274,68 +279,79 @@ for (i in 1:nrow(longFM)) {
 FMmean <- tapply(longFM$length, longFM$gender, mean)
 mu7 <- data.frame("Gender" = c("male","female"), "grp.mean" = FMmean)
 mu8 <- data.frame("grp.mean" = mean(combinemean$exsertion, na.rm = T))
-
 #exsertion ratio
-mu9 <- data.frame("grp.mean" = mean(combinemean$exsertion/combinemean$Fmean, na.rm = T))
+mu9 <- data.frame("grp.mean" = mean(combinemean$MFratio, na.rm = T))
 
 ggplot(longFM, aes(x = length, fill = Gender)) + geom_density(alpha=0.4) + xlim(4,15) +
   geom_vline(data = mu7, aes(xintercept = grp.mean, color = Gender), linetype = "dashed", size = 2) +
-  ggtitle("Stamen & Style Length of 235 accessions") + xlab("length (mm)")
+  ggtitle("Stamen & Pistil Length of 235 accessions") + xlab("length (mm)") +
+  theme(legend.position = "top")
 ggplot(combinemean, aes(x = exsertion)) + geom_density(alpha=0.4, fill = "lightsteelblue2") + xlim(-2.2,4.2) + 
   ggtitle("Stigma Exsertion of 235 accessions") +
   geom_vline(data = mu8, aes(xintercept = grp.mean), color = "royalblue4", linetype = "dashed", size = 2) + 
   theme(legend.position = "top") + xlab("length (mm)")
 
 #exsertion ratio
-ratio <- data.frame(x = (combinemean$exsertion/combinemean$Fmean))
-ggplot(ratio, aes(x = x)) + geom_density(alpha=0.4, fill = "steelblue") + xlim(-0.2,0.35) + 
-  ggtitle("the exsertion ratio of 235 accessions") + xlab("exsertion ratio") +
+ggplot(combinemean, aes(x = MFratio)) + geom_density(alpha=0.4, fill = "steelblue") + xlim(0.55,1.25) + 
+  ggtitle("Stamen-Pistil Ratio of 235 accessions") +
   geom_vline(data = mu9, aes(xintercept = grp.mean), color = "royalblue4", linetype = "dashed", size = 2) + 
-  theme(legend.position = "top")
+  theme(legend.position = "top") + xlab("ratio")
 
 ###output the allmean csv###
 
 write.csv(combinemean, "C:/Users/Darui Yen/OneDrive/орн▒/combinemean.csv")
 
 #shapiro test
-sha11 <- shapiro.test(first$Mmean)#p-value = 0.0001535
-sha12 <- shapiro.test(first$Fmean)#p-value = 9.896e-08
-sha13 <- shapiro.test(first$exsertion)#p-value = 8.017e-06
+sha11 <- shapiro.test(first$Mmean)#p-value = 0.0001167
+sha12 <- shapiro.test(first$Fmean)#p-value = 2.342e-08
+sha13 <- shapiro.test(first$MFratio)#p-value = 0.0004151
+sha14 <- shapiro.test(first$exsertion)#p-value = 0.0001032
 sha21 <- shapiro.test(second$Mmean)#p-value = 6.391e-08
 sha22 <- shapiro.test(second$Fmean)#p-value = 1.049e-09
-sha23 <- shapiro.test(second$exsertion)#p-value = 3.954e-05
-sha31 <- shapiro.test(third$Mmean)#p-value = 6.943e-06
-sha32 <- shapiro.test(third$Fmean)#p-value = 2.737e-08
-sha33 <- shapiro.test(third$exsertion)#p-value = 0.0001316
-sha01 <- shapiro.test(combinemean$Mmean)
-sha02 <- shapiro.test(combinemean$Fmean)
-sha03 <- shapiro.test(combinemean$exsertion)
+sha23 <- shapiro.test(second$MFratio)#p-value = 0.04874
+sha24 <- shapiro.test(second$exsertion)#p-value = 3.954e-05
+sha31 <- shapiro.test(third$Mmean)#p-value = 8.112e-06
+sha32 <- shapiro.test(third$Fmean)#p-value = 3.048e-08
+sha33 <- shapiro.test(third$MFratio)#p-value = 0.0003877
+sha34 <- shapiro.test(third$exsertion)#p-value = 0.0001592
+sha01 <- shapiro.test(combinemean$Mmean)#p-value = 9.499e-07
+sha02 <- shapiro.test(combinemean$Fmean)#p-value = 2.573e-09
+sha03 <- shapiro.test(combinemean$MFratio)#p-value = 0.1738
+sha04 <- shapiro.test(combinemean$exsertion)#p-value = 0.0001575
 
 #qqplot
-par(mfrow = c(4,3))
-qqPlot(first$Mmean, envelope = F)
+par(mfrow = c(4,4))
+qqPlot(first$Mmean, envelope = F, id = F)
 title("stamen_1st")
-qqPlot(first$Fmean, envelope = F)
-title("style_1st")
-qqPlot(first$exsertion, envelope = F)
+qqPlot(first$Fmean, envelope = F, id = F)
+title("pistil_1st")
+qqPlot(first$MFratio, envelope = F, id = F)
+title("M-F ratio_1st")
+qqPlot(first$exsertion, envelope = F, id = F)
 title("exsertion_1st")
-qqPlot(second$Mmean, envelope = F)
+qqPlot(second$Mmean, envelope = F, id = F)
 title("stamen_2nd")
-qqPlot(second$Fmean, envelope = F)
-title("style_2nd")
-qqPlot(second$exsertion, envelope = F)
+qqPlot(second$Fmean, envelope = F, id = F)
+title("pistil_2nd")
+qqPlot(second$MFratio, envelope = F, id = F)
+title("M-F ratio_2nd")
+qqPlot(second$exsertion, envelope = F, id = F)
 title("exsertion_2nd")
-qqPlot(third$Mmean, envelope = F)
+qqPlot(third$Mmean, envelope = F, id = F)
 title("stamen_3rd")
-qqPlot(third$Fmean, envelope = F)
-title("style_3rd")
-qqPlot(third$exsertion, envelope = F)
+qqPlot(third$Fmean, envelope = F, id = F)
+title("pistil_3rd")
+qqPlot(third$MFratio, envelope = F, id = F)
+title("M-F ratio_3rd")
+qqPlot(third$exsertion, envelope = F, id = F)
 title("exsertion_3rd")
-qqPlot(combinemean$Mmean, envelope = F)
+qqPlot(combinemean$Mmean, envelope = F, id = F)
 title("stamen_combined")
-qqPlot(combinemean$Fmean, envelope = F)
-title("style_combined")
-qqPlot(combinemean$exsertion, envelope = F)
+qqPlot(combinemean$Fmean, envelope = F, id = F)
+title("pistil_combined")
+qqPlot(combinemean$MFratio, envelope = F, id = F)
+title("M-F ratio_combined")
+qqPlot(combinemean$exsertion, envelope = F, id = F)
 title("exsertion_combined")
 title("QQ plot", outer = T)
 
@@ -345,59 +361,75 @@ par(mfrow = c(1,1))
 
 bestM <- bestNormalize(combinemean$Mmean, allow_orderNorm = T, out_of_sample = F)
 bestF <- bestNormalize(combinemean$Fmean, allow_orderNorm = T, out_of_sample = F)
+bestR <- bestNormalize(combinemean$MFratio, allow_orderNorm = T, out_of_sample = F)
 beste <- bestNormalize(combinemean$exsertion, allow_orderNorm = T, out_of_sample = F)
 
 boxM <- boxcox(combinemean$Mmean)
 boxF <- boxcox(combinemean$Fmean)
+boxR <- boxcox(combinemean$MFratio)
 
 yeoM <- yeojohnson(combinemean$Mmean)
 yeoF <- yeojohnson(combinemean$Fmean)
+yeoR <- yeojohnson(combinemean$MFratio)
 yeoE <- yeojohnson(combinemean$exsertion)
 
 sha41 <- shapiro.test(bestM$x.t)
 sha42 <- shapiro.test(bestF$x.t)
-sha43 <- shapiro.test(beste$x.t)
+sha43 <- shapiro.test(bestR$x.t)
+sha44 <- shapiro.test(beste$x.t)
 
 shabM <- shapiro.test(boxM$x.t)
 shabF <- shapiro.test(boxF$x.t)
+shabR <- shapiro.test(boxR$x.t)
 shayM <- shapiro.test(yeoM$x.t)
 shayF <- shapiro.test(yeoF$x.t)
+shayR <- shapiro.test(yeoR$x.t)
 shayE <- shapiro.test(yeoE$x.t)
 
 shapiro_table <- data.frame(stamen = c(sha11$p.value, sha21$p.value, sha31$p.value, sha01$p.value, 
                                        shabM$p.value, shayM$p.value, sha41$p.value),
                             style = c(sha12$p.value, sha22$p.value, sha32$p.value, sha02$p.value, 
                                       shabF$p.value, shayF$p.value, sha42$p.value),
-                            exsertion = c(sha13$p.value, sha23$p.value, sha33$p.value, sha03$p.value, 
-                                          NA, shayE$p.value, sha43$p.value))
-rownames(shapiro_table) <- c("replicate1", "replicate2", "replicate3", "overall", "boxcox", "yeojohnson", "transform")
+                            MFratio = c(sha13$p.value, sha23$p.value, sha33$p.value, sha03$p.value, 
+                                      shabR$p.value, shayR$p.value, sha43$p.value),
+                            exsertion = c(sha14$p.value, sha24$p.value, sha34$p.value, sha04$p.value, 
+                                          NA, shayE$p.value, sha44$p.value))
+rownames(shapiro_table) <- c("replicate1", "replicate2", "replicate3", "overall", "boxcox", "yeojohnson", "quantile")
 formattable(shapiro_table)
 
 
-layout_mat <- matrix(c(1:5,0,6:11), ncol = 3, nrow = 4, byrow = T)
-par(mfrow = c(4,3))
+layout_mat <- matrix(c(1:7,0,8:15), ncol = 4, nrow = 4, byrow = T)
+par(mfrow = c(4,4))
 layout(mat = layout_mat)
 
 qqPlot(combinemean$Mmean, envelope = F, ylab = "data quantiles", id = F)
 title("stamen length")
 qqPlot(combinemean$Fmean, envelope = F, ylab = "data quantiles", id = F)
-title("style length")
+title("pistil length")
+qqPlot(combinemean$MFratio, envelope = F, ylab = "data quantiles", id = F)
+title("stamen-pistil ratio")
 qqPlot(combinemean$exsertion, envelope = F, ylab = "data quantiles", id = F)
 title("exsertion length")
 qqPlot(boxM$x.t, envelope = F, ylab = "data quantiles", id = F)
 title(sub = "method = boxcox")
 qqPlot(boxF$x.t, envelope = F, ylab = "data quantiles", id = F)
 title(sub = "method = boxcox")
+qqPlot(boxR$x.t, envelope = F, ylab = "data quantiles", id = F)
+title(sub = "method = boxcox")
 qqPlot(yeoM$x.t, envelope = F, ylab = "data quantiles", id = F)
 title(sub = "method = yeojohnson")
 qqPlot(yeoF$x.t, envelope = F, ylab = "data quantiles", id = F)
-title("style length", sub = "method = yeojohnson")
+title(sub = "method = yeojohnson")
+qqPlot(yeoR$x.t, envelope = F, ylab = "data quantiles", id = F)
+title(sub = "method = yeojohnson")
 qqPlot(yeoE$x.t, envelope = F, ylab = "data quantiles", id = F)
 title(sub = "method = yeojohnson")
 qqPlot(bestM$x.t, envelope = F, ylab = "data quantiles", id = F)
 title(sub = paste("method = ", names(bestM$norm_stats)[which.min(bestM$norm_stats)]))
 qqPlot(bestF$x.t, envelope = F, ylab = "data quantiles", id = F)
 title(sub = paste("method = ", names(bestF$norm_stats)[which.min(bestF$norm_stats)]))
+qqPlot(bestR$x.t, envelope = F, ylab = "data quantiles", id = F)
+title(sub = paste("method = ", names(bestR$norm_stats)[which.min(bestR$norm_stats)]))
 qqPlot(beste$x.t, envelope = F, ylab = "data quantiles", id = F)
 title(sub = paste("method = ", names(beste$norm_stats)[which.min(beste$norm_stats)]))
 title("QQ plot", outer = T)
@@ -413,5 +445,7 @@ title("Quantile Transformation", outer = T)
 par(mfrow = c(1,1))
 
 
-transform_combinemean <- data.frame(trans_M = bestM$x.t, trans_F = bestF$x.t, trans_e = beste$x.t)
+transform_combinemean <- data.frame(accession = combinemean$accession, trans_M = bestM$x.t, trans_F = bestF$x.t, 
+                                    trans_R = bestR$x.t, trans_e = beste$x.t)
 write.csv(transform_combinemean, "C:/Users/Darui Yen/OneDrive/орн▒/transform_combinemean.csv")
+write.csv(shapiro_table, 'C:/Users/Darui Yen/OneDrive/орн▒/transform_shapiro.csv')
