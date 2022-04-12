@@ -11,11 +11,10 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
-'''
-import smote_variants as sv
-'''
+
+# import smote_variants as sv
 from imblearn.under_sampling import RandomUnderSampler, TomekLinks, InstanceHardnessThreshold, NearMiss
-from imblearn.over_sampling import ADASYN, SMOTEN
+from imblearn.over_sampling import ADASYN, SMOTEN, RandomOverSampler
 
 from library.Data_Preprocessing import Balance_Ratio, training_def
 from library.Training_Data_Processing import Corner, Kind
@@ -46,7 +45,7 @@ def label_divide(train, test, label = 'GB', train_only = False):
 # ### Self-Defined Oversampling (Modified Border)
 # first writen by ChungCheng Huang, and then modified 
 
-# In[3]:
+# In[10]:
 
 
 # distance between instances
@@ -139,7 +138,7 @@ def Border(data, kind, max_distance, num_over, over_ratio = 1):
 
 # ### Oversampling
 
-# In[4]:
+# In[19]:
 
 
 # oversampling preparation
@@ -192,13 +191,13 @@ def over_sample(X, Y, method, ratio, n_neighbors = 5, *args):
     elif method == method_list[2]:
         over_sampler = sv.MSMOTE(ratio, n_neighbors)
     elif method == method_list[3]:
-        over_sampler = sv.ROSE(ratio)   
+        over_sampler = RandomOverSampler(sampling_strategy = ratio, shrinkage = 2.5)  
     elif method == method_list[4]:
         over_sampler = SMOTEN(sampling_strategy = ratio, k_neighbors = n_neighbors)
     elif method == method_list[5]:
         over_sampler = ADASYN(sampling_strategy = ratio, n_neighbors = n_neighbors)    
     
-    if method in method_list[0:4]:
+    if method in method_list[0:3]:
         over_X, over_Y = over_sampler.sample(X, Y)
     else:
         over_X, over_Y = over_sampler.fit_resample(X, Y)
@@ -208,7 +207,7 @@ def over_sample(X, Y, method, ratio, n_neighbors = 5, *args):
 
 # ### Undersampling
 
-# In[5]:
+# In[12]:
 
 
 # undersampling preparation
@@ -255,7 +254,7 @@ def under_sample(X, Y, method, ratio, *args):
 
 # ### Protocol to Generate Datasets
 
-# In[6]:
+# In[13]:
 
 
 # resampling combination (undersampling first) 
@@ -348,13 +347,71 @@ def border_set(train_data, kind_data, under_method, index, num_over, over_ratio,
         return dataset
 
 
+# ### Main Function for Generating 10 Datasets
+
+# In[17]:
+
+
+##### main function for generating all resampling datasets #####
+def resampling_dataset(runhist, kinds, train_month, final_br, num_os):    
+    dataset = {}
+    combine_dataset = {}
+    for i in range(10):
+        combine_dataset[i] = pd.DataFrame()
+
+    for i in tqdm(train_month):
+
+        print(f'Month {i}:')
+        print('# bad:', sum(runhist[f'm{i}'].GB))
+        br = Balance_Ratio(runhist[f'm{i}'])
+        over_br = num_os / br
+        under_br = final_br / num_os
+
+        # Border-related datasets
+        dataset[2] = border_set(runhist[f'm{i}'], kinds[f'm{i}'], 'NM', 2, num_over = num_os, over_ratio = over_br, 
+                                under_ratio = final_br, order = 'over')
+        dataset[6] = border_set(runhist[f'm{i}'], kinds[f'm{i}'], 'NM', 6, num_over = num_os, over_ratio = final_br, 
+                                under_ratio = under_br, order = 'under')
+        # original dataset
+        dataset[0] = runhist[f'm{i}'].copy()
+        # oversampling-first datasets 
+        dataset[1] = generate_set(runhist[f'm{i}'], 'ADASYN', 'NM', 1, over_ratio = over_br, under_ratio = final_br, 
+                                  order = 'over')
+        dataset[3] = generate_set(runhist[f'm{i}'], 'ROSE', 'NM', 3, over_ratio = over_br, under_ratio = final_br,
+                                  order = 'over')
+        dataset[4] = generate_set(runhist[f'm{i}'], 'SMOTEN', 'NM', 4, over_ratio = over_br, under_ratio = final_br, 
+                                  order = 'over')
+        # undersampling-first datasets
+        dataset[5] = generate_set(runhist[f'm{i}'], 'ADASYN', 'NM', 5, over_ratio = final_br, under_ratio = under_br, 
+                                  order = 'under')
+        dataset[7] = generate_set(runhist[f'm{i}'], 'ROSE', 'NM', 7, over_ratio = final_br, under_ratio = under_br, 
+                                  order = 'under')
+        dataset[8] = generate_set(runhist[f'm{i}'], 'SMOTEN', 'NM', 8, over_ratio = final_br, under_ratio = under_br, 
+                                  order = 'under')
+        # only undersampling
+        special = final_br if final_br < 0.1 else 0.1
+        dataset[9] = generate_set(runhist[f'm{i}'], None, 'NM', 9, over_ratio = None, under_ratio = special, 
+                                  order = 'over')
+
+        ### combine all training data after sampling by each month and save data files ###
+        for j in range(10):
+            temp_combine = pd.concat([combine_dataset[j], dataset[j]], axis = 0).fillna(0)
+            temp_cols = temp_combine.columns.to_list()
+            GB_pos = temp_cols.index('GB')
+            fine_cols = temp_cols[: GB_pos] + temp_cols[GB_pos+1: ] + temp_cols[GB_pos: GB_pos+1]
+            combine_dataset[j] = temp_combine[fine_cols]
+
+            dataset[j].to_csv(f'm{i}_dataset_{j}.csv')
+            combine_dataset[j].to_csv(f'dataset_{j}.csv')
+
+
 # ## 
 
 # ### Loading Relabeled Training Data & Kind
 
-# In[7]:
-'''
+# In[5]:
 
+'''
 ##### training data #####
 training_month = range(2, 5)
 
@@ -376,58 +433,8 @@ for i in training_month:
 
 # ### Oversampling & Undersampling Combination
 
-# In[9]:
+# In[20]:
 
 
-##### main function for generating all resampling datasets #####
-dataset = {}
-combine_dataset = {}
-for i in range(10):
-    combine_dataset[i] = pd.DataFrame()
-
-for i in tqdm(training_month):
-    
-    print(f'Month {i}:')
-    print('# bad:', sum(runhist[f'm{i}'].GB))
-    br = Balance_Ratio(runhist[f'm{i}'])
-    final_br = 0.1
-    num_os = 5
-    over_br = num_os / br
-    under_br = final_br / num_os
-    
-    
-    dataset[2] = border_set(runhist[f'm{i}'], kinds[f'm{i}'], 'NM', 2, num_over = num_os, over_ratio = over_br, 
-                            under_ratio = final_br, order = 'over')
-    dataset[6] = border_set(runhist[f'm{i}'], kinds[f'm{i}'], 'NM', 6, num_over = num_os, over_ratio = final_br, 
-                            under_ratio = under_br, order = 'under')
-    
-    dataset[0] = generate_set(runhist[f'm{i}'], 'NoSMOTE', None, 0, over_ratio = None, under_ratio = None, order = 'over')
-
-    dataset[1] = generate_set(runhist[f'm{i}'], 'ADASYN', 'NM', 1, over_ratio = over_br, under_ratio = final_br, 
-                              order = 'over')
-    dataset[3] = generate_set(runhist[f'm{i}'], 'ROSE', 'NM', 3, over_ratio = over_br*(1-1/num_os), under_ratio = final_br,
-                              order = 'over')
-    dataset[4] = generate_set(runhist[f'm{i}'], 'SMOTEN', 'NM', 4, over_ratio = over_br, under_ratio = final_br, 
-                              order = 'over')
-
-    dataset[5] = generate_set(runhist[f'm{i}'], 'ADASYN', 'NM', 5, over_ratio = final_br, under_ratio = under_br, 
-                              order = 'under')
-    dataset[7] = generate_set(runhist[f'm{i}'], 'ROSE', 'NM', 7, over_ratio = (final_br*(1-1/num_os)), 
-                              under_ratio = under_br, order = 'under')
-    dataset[8] = generate_set(runhist[f'm{i}'], 'SMOTEN', 'NM', 8, over_ratio = final_br, under_ratio = under_br, 
-                              order = 'under')
-    
-    special = final_br if final_br <0.1 else 0.1
-    dataset[9] = generate_set(runhist[f'm{i}'], None, 'NM', 9, over_ratio = None, under_ratio = special, order = 'over')
-    
-    ### combine all training data after sampling by each month and save data files ###
-    for j in range(10):
-        temp_combine = pd.concat([combine_dataset[j], dataset[j]], axis = 0).fillna(0)
-        temp_cols = temp_combine.columns.to_list()
-        GB_pos = temp_cols.index('GB')
-        fine_cols = temp_cols[: GB_pos] + temp_cols[GB_pos+1: ] + temp_cols[GB_pos: GB_pos+1]
-        combine_dataset[j] = temp_combine[fine_cols]
-        
-        dataset[j].to_csv(f'm{i}_dataset_{j}.csv')
-        combine_dataset[j].to_csv(f'dataset_{j}.csv')
+resampling_dataset(train_month = range(2, 5), final_br = 1, num_os = 10)
 '''

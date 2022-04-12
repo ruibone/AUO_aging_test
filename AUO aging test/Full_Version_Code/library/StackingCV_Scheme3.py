@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[142]:
+# In[1]:
 
 
 import os
@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader
 import optuna
 
 from library.Data_Preprocessing import Balance_Ratio, train_col
-from library.Imbalance_Sampling import label_divide
+from library.Imbalance_Sampling import label_divide, resampling_dataset
 from library.Aging_Score_Contour import score1
 from library.AdaBoost import train_set, multiple_set, multiple_month, line_chart, cf_matrix, AUC, PR_curve,      multiple_curve, PR_matrix, best_threshold, all_optuna, optuna_history, AdaBoost_creator 
 from library.XGBoost import XGBoost_creator
@@ -46,7 +46,7 @@ os.getcwd()
 
 # ### Optimize Base Learners
 
-# In[114]:
+# In[2]:
 
 
 # load hyperparameters of base learners finished by scheme 2 (for training data transformation)
@@ -68,7 +68,7 @@ def month_param(date, month_list, model_list, iter_dict, filename, mode, TPE_mul
     return month_dict
 
 
-# load hyperparameters of base learners finished by scheme 1 (for testing data transformation)
+# (optional) load hyperparameters of base learners finished by scheme 1 (for testing data transformation)
 def all_param(date, model_list, iter_dict, filename, mode, TPE_multi):
     
     sampler = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
@@ -126,7 +126,7 @@ def optimize_base(train_data, mode, TPE_multi, base_list, iter_dict, filename):
 
 # ### Transform Data by Base Learners
 
-# In[117]:
+# In[3]:
 
 
 # concept of strtified cross-validation
@@ -164,7 +164,7 @@ def stratified_data(train_data, cv):
 
 
 # input training data to the base learners and output the outcome
-def transform_train(train_data, mode, base_param, cv):
+def transform_train(train_data, mode, base_param, cv, add_origin = False):
     
     month_list = list(base_param.keys())
     model_list = list(base_param[month_list[0]].keys())
@@ -179,8 +179,8 @@ def transform_train(train_data, mode, base_param, cv):
             train_x_dict, train_y_dict, valid_x_dict, valid_y_dict = stratified_data(train_data[month][i], cv = cv)
             all_cv = pd.DataFrame()
             for j in range(cv):
-                
-                model_predict = pd.DataFrame()
+            
+                model_predict = pd.DataFrame()            
                 if mode == 'C':
                     
                     if 'NeuralNetwork' in model_list:
@@ -199,9 +199,10 @@ def transform_train(train_data, mode, base_param, cv):
                                                    base_param[month]['NeuralNetwork'][i]['bad_weight']])).to('cpu')
                         network, _, _ = trainingC(nn_model, train_loader, train_loader, optimizer, criterion, epoch = 100, 
                                                   early_stop = 10)
+                        
                         for x, y in valid_loader:
                             output = network(x)
-                            _, predict_y = torch.max(output.data, 1)
+                            predict_y = output.data[:, 1]
                         predict = pd.DataFrame({'N': predict_y.numpy()})
                         model_predict = pd.concat([model_predict, predict], axis = 1)
 
@@ -308,16 +309,24 @@ def transform_train(train_data, mode, base_param, cv):
                         model_predict = pd.concat([model_predict, predict], axis = 1)
                         
                 test_label = valid_y_dict[j].reset_index(drop = True)
-                done_cv = pd.concat([model_predict, test_label], axis = 1)
-                all_cv = pd.concat([all_cv, done_cv], axis = 0)
+                origin_feature = valid_x_dict[j].reset_index(drop = True)
+                if add_origin:
+                    done_cv = pd.concat([model_predict, origin_feature, test_label], axis = 1)
+                else:
+                    done_cv = pd.concat([model_predict, test_label], axis = 1)
                 
-            set_dict[i] = pd.concat([set_dict[i], all_cv], axis = 0)
+                all_cv = pd.concat([all_cv, done_cv], axis = 0)
+            month_done = pd.concat([set_dict[i], all_cv], axis = 0).fillna(0)
+            all_column = month_done.columns.to_list()
+            GB_index = all_column.index('GB')
+            all_column = all_column[: GB_index] + all_column[GB_index+1: ] + all_column[GB_index: GB_index+1]
+            set_dict[i] = month_done[all_column]
     
     return set_dict
 
 
 # input testing data to the base learners and output the outcome
-def transform_test(train_data, test_data, mode, base_param):
+def transform_test(train_data, test_data, mode, base_param, add_origin = False):
     
     month_list = list(base_param.keys())
     model_list = list(base_param[month_list[0]].keys())
@@ -328,7 +337,9 @@ def transform_test(train_data, test_data, mode, base_param):
         month_test = pd.DataFrame()
         for month in month_list:
 
-            train_x, train_y, test_x, test_y = label_divide(train_data[i], test_data, train_only = False)
+            select_test = train_col(train_data[month][i], test_data)
+            train_x, train_y, test_x, test_y = label_divide(train_data[month][i], select_test, train_only = False)
+            print(train_x.shape)
             model_predict = pd.DataFrame()
             if mode == 'C':
 
@@ -351,7 +362,7 @@ def transform_test(train_data, test_data, mode, base_param):
                     for X, Y in test_loader:
                         X, Y = X.float(), Y.long()
                         output = network(X)
-                        _, predict_y = torch.max(output.data, 1)
+                        predict_y = output.data[:, 1]
                     predict = pd.DataFrame({'N': predict_y.numpy()})
                     model_predict = pd.concat([model_predict, predict], axis = 1)
                 
@@ -458,19 +469,41 @@ def transform_test(train_data, test_data, mode, base_param):
                     model_predict = pd.concat([model_predict, predict], axis = 1)
 
             month_test = pd.concat([month_test, model_predict], axis = 1)
-        month_done = pd.concat([month_test, test_y], axis = 1)
-        test_dict[i] = month_done
+        if add_origin:
+            test_dict[i] = pd.concat([month_test, test_x, test_y], axis = 1)
+        else:
+            test_dict[i] = pd.concat([month_test, test_y], axis = 1)
         
     return test_dict
 
 
+# the testing data will be trnasformed by several months of base learners, so taking average of these probability is necessary
+def test_average(trans_test):
+    
+    set_list = list(trans_test.keys())
+    model_list = ['N', 'X', 'L', 'C', 'R', 'E']
+    new_test = dict()
+    for i in set_list:
+        label = trans_test[i]['GB']
+        new_test[i] = trans_test[i].iloc[:, :-1].copy()
+        for j in model_list:
+            if j in trans_test[i].columns:
+                new_test[i][f'avg_{j}'] = trans_test[i][j].apply(np.mean, axis = 1)
+                del new_test[i][j]
+            else:
+                continue
+        new_test[i]['GB'] = label
+    
+    return new_test
+
+
 # ### Meta Learner
 
-# In[62]:
+# In[4]:
 
 
 # input training data transformed by base classifiers and output the final prediction 
-def LR(train_x, test_x, train_y, test_y, config):
+def LR(train_x, test_x, train_y, test_y, config, return_prob = False):
     
     subconfig = config.copy()
     del subconfig['meta_learner']
@@ -483,7 +516,11 @@ def LR(train_x, test_x, train_y, test_y, config):
         clf.fit(train_x, train_y)
         coef = clf.feature_importances_
     predict_y = clf.predict(test_x)
-    result = pd.DataFrame({'truth': test_y, 'predict': predict_y})
+    define_predict = (predict_y > 0.5).astype(int)
+    if return_prob:
+        result = pd.DataFrame({'truth': test_y, 'predict': predict_y})
+    else:
+        result = pd.DataFrame({'truth': test_y, 'predict': define_predict})
     
     return result, coef
 
@@ -561,7 +598,7 @@ def runall_RidgeR(num_set, trainset_x, testset_x, trainset_y, testset_y, config,
 
 # ### Feature Importance
 
-# In[198]:
+# In[6]:
 
 
 def correlation_plot(target_data):
@@ -692,7 +729,7 @@ def rank_importance(target_data, mode = 'C'):
 
 # ### Optuna
 
-# In[159]:
+# In[5]:
 
 
 # creator of optuna study for all 3 schemes of stackingCV
@@ -718,7 +755,7 @@ def stackingCV_creator(train_data, mode, learner = 'ExtraTrees', num_valid = 5, 
 
             elif meta_learner['meta_learner'] == 'ExtraTrees':
                 param = {
-                    'n_estimators': trial.suggest_int('n_estimators', 100, 500, step = 200),
+                    'n_estimators': trial.suggest_categorical('n_estimators', [100, 500, 1000]),
                     'min_samples_split': trial.suggest_int('min_samples_split', 2, 24, step = 2),
                     'max_depth': trial.suggest_int('max_depth', 2, 4, step = 1),
                     'n_jobs': -1
@@ -780,13 +817,84 @@ def stackingCV_creator(train_data, mode, learner = 'ExtraTrees', num_valid = 5, 
     return objective
 
 
+# ### Full Experiment
+
+# In[6]:
+
+
+def full_stackingcv3(train_month, times):
+    prob_dict = dict()
+    result_df = pd.DataFrame()
+
+    # load relabel datasets
+    runhist = {}
+    kinds = {}
+    for i in train_month:
+        runhist[f'm{i}'] = pd.read_csv(f'relabel_runhist_m{i}.csv', index_col = 'id').iloc[:, 1:]
+        kinds[f'm{i}'] = pd.read_csv(f'kind_m{i}.csv').iloc[:, 2:-3]
+
+    # do several times to average the random effect of resampling
+    for i in tqdm(range(times)):
+        # generate resampled datasets
+        resampling_dataset(runhist = runhist, kinds = kinds, train_month = train_month, final_br = 1, num_os = 10)
+
+        # load & prepare the resampled datasets 
+        data_dict, trainset_x, trainset_y = multiple_month(training_month, num_set = 10, filename = 'dataset')
+        all_train = multiple_set(num_set = 10)
+        all_train_x, all_train_y = train_set(all_train)
+        all_test = pd.read_csv('test_runhist.csv').iloc[:, 2:]
+        all_test_x, all_test_y = label_divide(all_test, None, 'GB', train_only = True)
+
+        # optimization for each month of data
+        base_param = optimize_base(train_data = data_dict, 
+                                   mode = 'C', 
+                                   TPE_multi = False, 
+                                   base_list = ['XGBoost', 'NeuralNetwork', 'LightGBM'],
+                                   iter_dict = {'LightGBM': 25, 'NeuralNetwork': 10, 'XGBoost': 25},
+                                   filename = f'runhist_array_m2m4_m5_3criteria_scheme3-{i}')
+        
+        # data trnasformation
+        trans_train = transform_train(data_dict, mode = 'C', base_param = base_param, cv = 5, add_origin = True)
+        temp_test = transform_test(data_dict, all_test, mode = 'C', base_param = base_param, add_origin = True)
+        trans_test = test_average(temp_test)
+        trans_train_x, trans_train_y = train_set(trans_train)
+        trans_test_x, trans_test_y = train_set(trans_test) 
+        trans_train['set0'] = {}      
+        
+        # searching for hyperparameters
+        best_param, _ = all_optuna(all_data = trans_train, 
+                                   mode = 'C', 
+                                   TPE_multi = False, 
+                                   n_iter = 10,
+                                   filename = f'runhist_array_m2m4_m5_3criteria_StackingCV3-{i}',
+                                   creator = stackingCV_creator)
+        
+        # store the probability predicted by the classifier 
+        for j in best_param.keys():
+            if i == 0:
+                prob_dict[j] = pd.DataFrame()
+            table, _ = LR(all_train_x[j], all_test_x, all_train_y[j], all_test_y, best_param[j], return_prob = True)
+            prob_dict[j] = pd.concat([prob_dict[j], table[['predict']]], axis = 1)
+            
+    # average to get final prediction
+    for j in best_param.keys():
+        prediction = (prob_dict[j].apply(np.sum, axis = 1) >= 0.5).astype(int)
+        result = pd.DataFrame(dict(truth = all_test_y, predict = prediction))
+        table = cf_matrix(result, all_train_y[j])
+        result_df = pd.concat([result_df, table]).rename(index = {0: f'data{j}'})
+        
+    return result_df
+
+
 # ## 
+
+# ### For a Run
+
+# #### Load Data
+
+# In[8]:
+
 '''
-# ### Load Data
-
-# In[65]:
-
-
 ### training data ### 
 training_month = range(2, 5)
 
@@ -802,35 +910,21 @@ run_test_x, run_test_y = label_divide(run_test, None, 'GB', train_only = True)
 print('\n', 'Dimension of testing data:', run_test.shape)
 
 
-# ## Base Learner
+# #### Hyperparmeters for All The Base Learners
 
-# ### Hyperparameters for Training Data Transformation
-
-# In[66]:
+# In[9]:
 
 
 target_month = range(2, 5)
-target_model = ['LightGBM', 'XGBoost', "NeuralNetwork"]
-target_iter = {'LightGBM': 25, 'XGBoost': 25, 'NeuralNetwork': 10}
+target_model = ['XGBoost', 'NeuralNetwork', 'LightGBM']
+target_iter = {'LightGBM': 25, 'NeuralNetwork': 10, 'XGBoost': 25, 'CatBoost': 25, 'RandomForest': 10}
 
 
-# In[67]:
+# In[10]:
 
 
-##### datasets of each month are optimized by by optuna ##### 
-base_param_monthC = optimize_base(train_data = data_dict, 
-                                  mode = 'C', 
-                                  TPE_multi = False, 
-                                  base_list = target_model,
-                                  iter_dict = target_iter,
-                                  filename = 'runhist_array_m2m4_m5_3criteria')
-
-
-# In[14]:
-
-
-##### or load hyperparmeters of base learner from stackingCV scheme 2 #####
-base_param_monthC = month_param(date = '20220315', 
+##### load hyperparmeters of base learner from stackingCV scheme 2 #####
+base_param_monthC = month_param(date = '20220329', 
                                 month_list = list(target_month), 
                                 model_list = target_model, 
                                 iter_dict = target_iter, 
@@ -839,48 +933,39 @@ base_param_monthC = month_param(date = '20220315',
                                 TPE_multi = False)
 
 
-# ### Hyperparameters for Testing Data Transformation
+# In[ ]:
+
+
+##### or optimize hyperparmeters of each month by optuna ##### 
+base_param_monthC = optimize_base(train_data = data_dict, 
+                                  mode = 'C', 
+                                  TPE_multi = False, 
+                                  base_list = target_model,
+                                  iter_dict = target_iter,
+                                  filename = 'runhist_array_m2m4_m5_3criteria')
+
+
+# #### Data Transformation
 
 # In[68]:
 
 
-##### datasets of whole are optimized by by optuna ##### 
-base_param_allC = optimize_base(train_data = {'all': run_train}, 
-                                mode = 'C', 
-                                TPE_multi = False, 
-                                base_list = target_model, 
-                                iter_dict = target_iter,
-                                filename = 'runhist_array_m2m4_m5_3criteria')
-
-
-# In[115]:
-
-
-##### or load hyperparmeters of base learner from stackingCV scheme 1 #####
-base_param_allC = all_param(date = '20220308', 
-                            model_list = target_model, 
-                            iter_dict = target_iter, 
-                            filename = 'runhist_array_m2m4_m5_3criteria', 
-                            mode = 'C', 
-                            TPE_multi = False)
-
-
-# 
-# ### Data Transform
-
-# In[71]:
-
+add_origin_features = False
 
 print('Transform Training Data:')
 train_firstC = transform_train(data_dict, 
                                mode = 'C', 
                                base_param = base_param_monthC, 
-                               cv = 5)
+                               cv = 5,
+                               add_origin = add_origin_features)
 print('\nTransform Testing Data:')
-test_firstC = transform_test(run_train, 
+test_first = transform_test(data_dict, 
                              run_test, 
                              mode = 'C', 
-                             base_param = base_param_allC)
+                             base_param = base_param_monthC,
+                             add_origin = add_origin_features)
+test_firstC = test_average(test_first)
+
 train_firstC_x, train_firstC_y = train_set(train_firstC)
 test_firstC_x, test_firstC_y = train_set(test_firstC) 
 
@@ -888,11 +973,9 @@ test_firstC_x, test_firstC_y = train_set(test_firstC)
 train_firstC['set0'] = {}
 
 
-# ## Meta Learner
+# #### Search for The Best Hyperparameters of Meta Learner
 
-# ### Search for The Best Hyperparameters
-
-# In[130]:
+# In[69]:
 
 
 best_paramC, all_scoreC = all_optuna(all_data = train_firstC, 
@@ -903,7 +986,7 @@ best_paramC, all_scoreC = all_optuna(all_data = train_firstC,
                                      creator = stackingCV_creator)
 
 
-# In[131]:
+# In[70]:
 
 
 ##### optimization history plot #####
@@ -914,36 +997,52 @@ param_table = pd.DataFrame(best_paramC).T
 param_table
 
 
-# ### Feature Importance of Meta Learner
+# #### Feature Importance of Meta Learner
 
-# In[199]:
+# In[ ]:
 
 
 target_set = 5
 rank_importance(train_firstC[f'set{target_set}'], mode = 'C')
 
 
-# ### Classifier
+# #### Classifier
 
-# In[132]:
+# In[71]:
 
 
 table_setC, coefC = runall_LR(train_firstC_x, test_firstC_x, train_firstC_y, test_firstC_y, best_paramC)
 line_chart(table_setC, title = 'StackingCV Classifier (Scheme 3)')
 
 
-# In[133]:
+# In[72]:
 
 
 table_setC
 
 
+# ### Full Experiment
+
+# In[ ]:
+
+
+training_month = range(2, 5)
+table_setC = full_stackingcv3(training_month, times = 3)
+
+
+# In[ ]:
+
+
+line_chart(table_setC, title = 'StackingCV Scheme 3 Classifier')
+table_setC
+
+
 # ### Export
 
-# In[17]:
+# In[ ]:
 
 
-savedate = '20220315'
+savedate = '20220412'
 TPE_multi = False
 
 table_setC['sampler'] = 'multivariate-TPE' if TPE_multi else 'univariate-TPE'
