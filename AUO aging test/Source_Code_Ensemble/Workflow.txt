@@ -1,0 +1,250 @@
+閻大瑞，20220601
+
+
+此資料夾中共包含13份ipynb程式碼，其中檔名為1開頭之2份程式碼負責資料預處理，2開頭之1份程式碼為資料重抽樣，3開頭之6份程式碼為既有之
+分類模型，4開頭之4份程式碼為大型集成學習架構。
+
+另外，部分ipynb程式碼會另存為py檔，並且置於Library資料夾中，作為其他ipynb檔之函式庫使用。
+
+程式碼之執行程序如下：1-1_Data_Preprocessing  =>  1-2_Training_Data_Processing  =>  欲使用之分類模型
+
+
+====================================================================================================================================
+
+1-1_Data_Preprocessing:
+
+Input: 各月份之module csv檔, runhist_array csv檔, id_mapping csv檔
+Output: selected_runhist_m2.csv, ... (以月份為單位之訓練資料集), test_runhist.csv (測試資料集)
+
+Setting: target_month --> 訓練資料集和測試資料集所包含之月份 (default = range(2, 6))
+	 training_month --> 訓練資料集包含之月份 (default = range(2, 5))
+	 testing_month --> 測試資料集包含之月份 (dafault = range(5, 6))
+
+Description: 此份程式碼之目的為合併以及預處理原始檔案，並且切割訓練和測試資料集。此外，最後也有呈現資料視覺化之結果和圖像。
+
+
+------------------------------------------------------------------------------------------------------------------------------------
+
+1-2_Training_Data_Processing:
+
+Input: selected_runhist_m2.csv, ... (以月份為單位之訓練資料集), test_runhist.csv (測試資料集)
+Output: relabel_runhist_m2.csv, ... (以月份為單位之標籤重標記訓練資料集), kind_m2.csv, ... (以月份為單位之變數組合資料集)
+
+Setting: training_month --> 欲進行標籤重標記之月份 (default = range(2, 5))
+
+Description: 此份程式碼之目的為針對各月份之訓練資料集個別進行標籤重標記，並且記錄所有變數組合，供後續的Border上抽樣時使用。
+
+
+====================================================================================================================================
+
+2-1_Imbalance_Sampling
+
+Input: relabel_runhist_m2.csv, ... (以月份為單位之標籤重標記訓練資料集), kind_m2.csv, ... (以月份為單位之變數組合資料集)
+Output: m2_dataset_0, ...m2_dataset_9, ...m4_dataset_9 (以月份為單位之10個重抽樣資料集), 
+	dataset_0, ..., dataset_9 (合併之10個重抽樣資料集)
+
+Setting: training_month --> 欲進行重抽樣之月份 (default = range(2, 5))
+	 num_os --> 平均一筆少數樣本生成心樣本之數量 (default = 10)
+	 final_br --> 重抽樣資料集之不平衡比率 (此值介於0-1之間，default = 1)
+
+Description: 此份程式碼之目的為針對各月份之訓練資料集個別重抽樣出10個資料集，重抽樣完成後再將各月份之資料合併，作為分類模型之輸入。
+	     需要注意的是各分類模型之程式碼中都包含了資料重抽樣之步驟，因此此份程式碼主要作為函式庫使用，不須特別執行。
+
+
+====================================================================================================================================
+
+3-1_XGBoost
+
+Input: none
+Output: result table, SMBO決定之超參數
+
+Setting: training_month --> 欲進行重抽樣之月份 (default = range(2, 5))
+
+Hyperparameters: SMBO iterations --> 25
+		 final_br --> 1
+		 num_os --> 10
+		 number of channels --> 3
+
+Description: 此份程式碼之目的為使用XGBoost預測面板良莠。
+
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+3-2_CatBoost
+
+Input: none
+Output: result table, SMBO決定之超參數
+
+Setting: training_month --> 欲進行重抽樣之月份 (default = range(2, 5))
+
+Hyperparameters: SMBO iterations --> 25
+		 final_br --> 1
+		 num_os --> 10
+		 number of channels --> 3
+
+Description: 此份程式碼之目的為使用CatBoost預測面板良莠。
+
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+3-3_LightGBM
+
+Input: none
+Output: result table, SMBO決定之超參數
+
+Setting: training_month --> 欲進行重抽樣之月份 (default = range(2, 5))
+
+Hyperparameters: SMBO iterations --> 25
+		 final_br --> 1
+		 num_os --> 10
+		 number of channels --> 3
+
+Description: 此份程式碼之目的為使用LightGBM預測面板良莠。
+
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+3-4_RandomForest
+
+Input: none
+Output: result table, SMBO決定之超參數
+
+Setting: training_month --> 欲進行重抽樣之月份 (default = range(2, 5))
+
+Hyperparameters: SMBO iterations --> 25
+		 final_br --> 1
+		 num_os --> 10
+		 number of channels --> 3
+
+Description: 此份程式碼之目的為使用RandomForest預測面板良莠。
+
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+3-5_ExtraTrees
+
+Input: none
+Output: result table, SMBO決定之超參數
+
+Setting: training_month --> 欲進行重抽樣之月份 (default = range(2, 5))
+
+Hyperparameters: SMBO iterations --> 25
+		 final_br --> 1
+		 num_os --> 10
+		 number of channels --> 3
+
+Description: 此份程式碼之目的為使用ExtraTrees預測面板良莠。
+
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+3-6_NeuralNetwork
+
+Input: none
+Output: result table, SMBO決定之超參數
+
+Setting: training_month --> 欲進行重抽樣之月份 (default = range(2, 5))
+	 optimizer --> Adam
+	 activation function --> ReLU
+
+Hyperparameters: SMBO iterations --> 10
+		 final_br --> 1
+		 num_os --> 10
+		 number of channels --> 3
+		 epoch --> 150
+		 early stopping --> 10
+
+Description: 此份程式碼之目的為使用NeuralNetwork分類器預測面板良莠。
+
+
+=====================================================================================================================================
+
+4-1_StackingCV_Scheme1
+
+Input: none
+Output: result table, SMBO決定之超參數
+
+Setting: training_month --> 欲進行重抽樣之月份 (default = range(2, 5))
+	 base learner --> XGBoost, LightGBM, NeuralNetwork Classifier
+	 meta learner --> Logistic Regression
+
+Hyperparameters: folds of stackingCV --> 5
+		 SMBO iterations of base learners --> 10-25
+		 SMBO iterations of meta learner --> 10
+		 final_br --> 1
+		 num_os --> 10
+		 number of channels --> 3
+		 add_original_features --> False
+
+Description: 此份程式碼之目的為使用SCV-1預測面板良莠。
+
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+4-2_StackingCV_Scheme2
+
+Input: none
+Output: result table, SMBO決定之超參數
+
+Setting: training_month --> 欲進行重抽樣之月份 (default = range(2, 5))
+	 base learner --> XGBoost, LightGBM, NeuralNetwork Classifier
+	 meta learner --> ExtraTrees
+
+Hyperparameters: folds of stackingCV --> 5
+		 SMBO iterations of base learners --> 10-25
+		 SMBO iterations of meta learner --> 10
+		 final_br --> 1
+		 num_os --> 10
+		 number of channels --> 3
+		 add_original_features --> True
+
+Description: 此份程式碼之目的為使用SCV-2預測面板良莠。
+
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+4-3_StackingCV_Scheme3
+
+Input: none
+Output: result table, SMBO決定之超參數
+
+Setting: training_month --> 欲進行重抽樣之月份 (default = range(2, 5))
+	 base learner --> XGBoost, LightGBM, NeuralNetwork Classifier
+	 meta learner --> ExtraTrees
+
+Hyperparameters: folds of stackingCV --> 5
+		 SMBO iterations of base learners --> 10-25
+		 SMBO iterations of meta learner --> 10
+		 final_br --> 1
+		 num_os --> 10
+		 number of channels --> 3
+		 add_original_features --> True
+
+Description: 此份程式碼之目的為使用SCV-3預測面板良莠。
+
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+4-4_BalanceCascade
+
+Input: none
+Output: result table, SMBO決定之超參數
+
+Setting: training_month --> 欲進行重抽樣之月份 (default = range(2, 5))
+	 base learner --> LightGBM
+	 meta learner --> hard voting
+	 undersampling method --> Near Miss 
+	 oversampling method --> ADASYN (for BC-2 only)
+
+Hyperparameters: over_num in each iteration --> 5 (for BC-2 only)
+		 SMBO iterations of base learners --> 25
+		 final_br --> 0.1 if BC-1 else 0.05 (不可重抽樣至剛好平衡)
+		 num_os --> 10
+		 number of channels --> 3
+		 number of base learners (equivalent to iterations of balance cascade) --> 10 if BC-1 else 15
+
+Description: 此份程式碼之目的為使用BC-1或者BC-2預測面板良莠，由參數'scheme'可以調選擇使用BC-1或者BC-2 (default = 1)，並且以上之超參數
+	     會自動調整。
+
+
+=====================================================================================================================================
